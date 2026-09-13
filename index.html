@@ -93,8 +93,19 @@
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   const reducedMotion = !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-  // Same money filter as the database, so users are warned before they submit.
-  const MONEY = /(€|\$|£|\beuros?\b|\bpay\w*|\bpaid\b|\bcash\b|\bfees?\b|\bprice\b|\bcosts?\b|revolut|paypal|\bswish\w*|\bpetrol money\b|\bfuel money\b|\bgas money\b|\bchip in\b|\bcontribut\w*)/i;
+  // Mirrors public.contains_money in the database, so people are warned
+  // as they type instead of being rejected after they press send.
+  const MONEY = new RegExp(
+    "(€|\\$|£|\\beuros?\\b|\\beuron?\\b|\\bdollars?\\b|\\bpounds?\\b|\\bcents?\\b|\\bkr\\b|\\bkronor\\b|\\blira\\b"
+    + "|\\bmoney\\b|\\bmonies\\b|\\bcash\\b|\\bfunds?\\b"
+    + "|\\bpay\\b|\\bpays\\b|\\bpaying\\b|\\bpaid\\b|\\bpayment\\w*|\\brepay\\w*|\\bprepay\\w*"
+    + "|\\bfees?\\b|\\bprices?\\b|\\bcosts?\\b|\\bcharge[sd]?\\b|\\brates?\\b|\\btolls?\\b|\\bbills?\\b|\\bexpenses?\\b"
+    + "|\\bchip in\\b|\\bchips in\\b|\\bcontribut\\w*|\\bsplit the\\b|\\bgo halves\\b|\\bhalf the\\b|\\bshare the (cost|fuel|petrol|gas|fare)\\b"
+    + "|\\b(fuel|petrol|gas|diesel|benzin|bensin)\\s*(money|cost|costs|cash|contribution|share)\\b"
+    + "|\\b(money|cash|something|anything)\\s+(for|towards|toward)\\s+(the\\s+)?(fuel|petrol|gas|diesel|ride|trip|drive|lift)\\b"
+    + "|\\brevolut\\b|\\bpaypal\\b|\\bswish\\w*|\\bvenmo\\b|\\bzelle\\b|\\bwise\\b|\\bbank transfer\\b|\\biban\\b|\\bcrypto\\b|\\bbitcoin\\b"
+    + "|\\btips?\\b|\\btipping\\b|\\bcompensat\\w*|\\breimburs\\w*|\\brefund\\w*|\\bdonation\\w*|\\bdonate\\w*"
+    + "|ευρώ|ευρω|λεφτά|λεφτα|χρήματα|χρηματα|πληρ|μετρητ)", "i");
   const LINK  = /(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|net|org|cy|se|eu|io|ly|me|app|info|link)\b)/i;
 
   const VIBES = [
@@ -152,6 +163,7 @@
     view: "find",
     user: null, profile: null,
     cities: [], rides: [], myRequests: [], invites: [], chats: [], messages: [],
+    admin: { reports: [], members: [], words: [], people: {}, readingChat: null, chatMessages: [] },
     filters: { from: "", to: "", when: "any", vibes: [] },
     form: null,
     formErrors: {},
@@ -758,6 +770,115 @@
     </div>`;
   }
 
+  /* ---------- View: Admin ----------
+     Only for admins, and deliberately narrow. Reported threads can be
+     read; everything else stays private. Every read is written to the
+     audit log by the database, not by this page. */
+  function adminView() {
+    const a = state.admin;
+    const open = a.reports.filter((r) => r.status === "open");
+    const closed = a.reports.filter((r) => r.status === "closed").slice(0, 10);
+    const reasonLabel = (id) => (REPORT_REASONS.find(([x]) => x === id) || [, id])[1];
+
+    const reportRow = (r) => {
+      const reporter = a.people[r.reporter_id];
+      const reported = a.people[r.reported_id];
+      const openRow = r.status === "open";
+      return `<li class="p-5">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-0">
+            <p class="font-semibold">${esc(reasonLabel(r.reason))}</p>
+            <p class="mt-1 text-sm text-slate-600">
+              ${esc(reported?.full_name || "Unknown")} reported by ${esc(reporter?.full_name || "a former member")}
+              on ${new Date(r.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</p>
+            ${r.details ? `<p class="mt-2 text-sm text-slate-700 rounded-xl bg-slate-50 p-3">${esc(r.details)}</p>` : ""}
+          </div>
+          ${openRow
+            ? `<span class="pill bg-amber-100 text-amber-900 shrink-0">${icon("circle-alert")} Open</span>`
+            : `<span class="pill bg-slate-100 text-slate-600 shrink-0">Closed</span>`}
+        </div>
+
+        ${openRow ? `<div class="mt-4 flex flex-wrap gap-2">
+          ${r.chat_id ? `<button data-action="admin-read" data-id="${r.chat_id}" class="btn-ghost py-2">${icon("file-text")} Read the thread</button>` : ""}
+          ${reported ? `<button data-action="admin-suspend" data-id="${r.reported_id}" class="btn-ghost py-2 text-rose-700 border-rose-300">${icon("user-x")} Suspend ${esc(firstName(reported.full_name))}</button>` : ""}
+          <button data-action="admin-close" data-id="${r.id}" class="btn-primary py-2">${icon("check")} Close this case</button>
+        </div>
+        <p class="mt-2 text-xs text-slate-500">Reading a thread is logged. A reported thread is kept until the case is closed, then 90 more days.</p>` : ""}
+
+        ${a.readingChat === r.chat_id && a.chatMessages.length ? `<div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2 max-h-64 overflow-y-auto">
+          ${a.chatMessages.map((msg) => `<p class="text-sm ${msg.sender_id ? "" : "text-slate-500 italic"}">
+            <span class="font-semibold">${msg.sender_id ? esc(a.people[msg.sender_id]?.full_name || "Member") : "Lifta"}:</span>
+            ${esc(msg.body)}</p>`).join("")}
+        </div>` : ""}
+      </li>`;
+    };
+
+    const memberRow = (p) => `<li class="p-4 flex flex-wrap items-center justify-between gap-3">
+      <span class="flex items-center gap-3 min-w-0">
+        ${avatar(p.full_name, "sm")}
+        <span class="min-w-0">
+          <span class="block font-medium truncate">${esc(p.full_name)}${p.role === "admin" ? ' <span class="tag ml-1">Admin</span>' : ""}</span>
+          <span class="block text-sm text-slate-500">Joined ${new Date(p.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}${p.invited_by ? `, invited by ${esc(firstName(a.people[p.invited_by]?.full_name) || "a member")}` : ""}</span>
+        </span>
+      </span>
+      ${p.id === state.user.id ? `<span class="text-sm text-slate-500 shrink-0">You</span>`
+        : p.status === "suspended"
+          ? `<button data-action="admin-restore" data-id="${p.id}" class="btn-ghost py-2 shrink-0">Restore</button>`
+          : `<button data-action="admin-suspend" data-id="${p.id}" class="btn-ghost py-2 text-rose-700 border-rose-300 shrink-0">Suspend</button>`}
+    </li>`;
+
+    return `
+    <div class="max-w-3xl mx-auto px-4 py-8 sm:py-12 space-y-6">
+      <div>
+        <h1 class="font-display text-4xl sm:text-5xl font-extrabold tracking-tight">Admin</h1>
+        <p class="mt-3 text-lg text-slate-600">Reports first. Everything else is housekeeping.</p>
+      </div>
+
+      <section class="card">
+        <div class="p-5 pb-0 flex items-center justify-between gap-3">
+          <h2 class="font-display text-xl font-extrabold">Open reports</h2>
+          ${open.length ? `<span class="pill bg-amber-100 text-amber-900">${open.length}</span>` : ""}
+        </div>
+        ${open.length
+          ? `<ul class="divide-y divide-slate-100 mt-2">${open.map(reportRow).join("")}</ul>`
+          : `<p class="p-5 text-slate-600">Nothing to look at. Good sign.</p>`}
+      </section>
+
+      ${closed.length ? `<section class="card">
+        <h2 class="font-display text-xl font-extrabold p-5 pb-0">Recently closed</h2>
+        <ul class="divide-y divide-slate-100 mt-2">${closed.map(reportRow).join("")}</ul>
+      </section>` : ""}
+
+      <section class="card">
+        <h2 class="font-display text-xl font-extrabold p-5 pb-0">Members</h2>
+        <p class="px-5 pt-1 text-sm text-slate-600">${plural(a.members.length, "member", "members")}. A suspended account cannot post, join or message.</p>
+        <ul class="divide-y divide-slate-100 mt-3">${a.members.map(memberRow).join("")}</ul>
+      </section>
+
+      <section class="card p-5">
+        <h2 class="font-display text-xl font-extrabold">Blocked words</h2>
+        <p class="mt-1 text-sm text-slate-600">Beyond money and links, which are always blocked. One word per entry, letters and numbers only.</p>
+        ${a.words.length ? `<div class="mt-4 flex flex-wrap gap-2">${a.words.map((w) => `
+          <span class="tag">${esc(w.word)}
+            <button data-action="admin-unword" data-id="${esc(w.word)}" class="text-slate-500 hover:text-rose-700" aria-label="Remove ${esc(w.word)}">${icon("x", "w-3.5 h-3.5")}</button>
+          </span>`).join("")}</div>` : `<p class="mt-4 text-sm text-slate-500">No extra words blocked.</p>`}
+        <form id="word-form" class="mt-4 flex gap-2">
+          <input id="word-input" class="inp" placeholder="Add a word" maxlength="40" autocomplete="off" />
+          <button type="submit" class="btn-ghost shrink-0">Add</button>
+        </form>
+      </section>
+
+      <section class="rounded-2xl bg-ink text-white p-6">
+        <h2 class="font-display text-xl font-extrabold flex items-center gap-2">${icon("eye", "w-5 h-5 text-sun")} What you can and cannot see</h2>
+        <ul class="mt-4 space-y-3 text-slate-200 leading-relaxed text-sm">
+          <li class="flex gap-3">${icon("check", "w-4 h-4 shrink-0 mt-0.5 text-teal-300")} You can read a trip thread only while it has an open report.</li>
+          <li class="flex gap-3">${icon("x", "w-4 h-4 shrink-0 mt-0.5 text-rose-300")} You cannot read any other thread. The database refuses, not this page.</li>
+          <li class="flex gap-3">${icon("file-text", "w-4 h-4 shrink-0 mt-0.5 text-teal-300")} Every read and every suspension is written to the audit log.</li>
+        </ul>
+      </section>
+    </div>`;
+  }
+
   /* ---------- Modals ---------- */
   function modalFrame(title, body) {
     return `<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="modal-title">
@@ -974,6 +1095,10 @@
     { id: "trips",   label: "My trips",    icon: "route" },
     { id: "profile", label: "Profile",     icon: "user" },
   ];
+  // Admin is a fifth tab, and only admins ever see it.
+  const navItems = () => state.profile?.role === "admin"
+    ? [...NAV, { id: "admin", label: "Admin", icon: "shield" }]
+    : NAV;
 
   const logo = `<span class="inline-flex items-center gap-2.5">
     <span class="w-9 h-9 rounded-xl bg-ink grid place-items-center" aria-hidden="true"><span class="road-v" style="height:22px;min-height:0;width:8px"></span></span>
@@ -997,7 +1122,7 @@
         <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <button data-action="nav" data-view="find" class="rounded-lg" aria-label="Lifta home">${logo}</button>
           <nav class="hidden md:flex items-center gap-1" aria-label="Main">
-            ${NAV.map((n) => `<button data-action="nav" data-view="${n.id}" ${state.view === n.id ? 'aria-current="page"' : ""}
+            ${navItems().map((n) => `<button data-action="nav" data-view="${n.id}" ${state.view === n.id ? 'aria-current="page"' : ""}
               class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${state.view === n.id ? "bg-ink text-white" : "text-slate-600 hover:bg-slate-100"}">
               ${icon(n.icon)}${n.label}
               ${n.id === "trips" && pendingCount ? `<span class="ml-0.5 h-5 px-1.5 rounded-full bg-sun text-ink text-xs font-bold grid place-items-center">${pendingCount}</span>` : ""}
@@ -1009,8 +1134,8 @@
 
     <main class="pb-28 md:pb-16">${content}</main>
 
-    <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 grid grid-cols-4" aria-label="Main">
-      ${NAV.map((n) => {
+    <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 grid" style="grid-template-columns: repeat(${navItems().length}, minmax(0, 1fr))" aria-label="Main">
+      ${navItems().map((n) => {
         const active = state.view === n.id;
         return `<button data-action="nav" data-view="${n.id}" ${active ? 'aria-current="page"' : ""}
           class="relative flex flex-col items-center gap-1 pt-3 pb-4 text-xs font-semibold ${active ? "text-teal-800" : "text-slate-500"}">
@@ -1072,6 +1197,7 @@
       const content = state.view === "find" ? findView()
                     : state.view === "post" ? postView()
                     : state.view === "trips" ? tripsView()
+                    : state.view === "admin" ? adminView()
                     : profileView();
       app.innerHTML = shell(content);
       if (state.view === "find") { renderResults(); state.heroPlayed = true; }
@@ -1155,6 +1281,20 @@
     renderModal();
   }
 
+  // Admin data. The database decides what comes back: a non-admin gets
+  // only their own reports, and no member list beyond what anyone sees.
+  async function loadAdmin() {
+    const [{ data: reports }, { data: members }, { data: words }] = await Promise.all([
+      db.from("reports").select("*").order("created_at", { ascending: false }),
+      db.from("profiles").select("*").order("created_at"),
+      db.from("blocked_words").select("*").order("word"),
+    ]);
+    state.admin.reports = reports || [];
+    state.admin.members = members || [];
+    state.admin.words = words || [];
+    state.admin.people = Object.fromEntries((members || []).map((p) => [p.id, p]));
+  }
+
   /* ---------- Actions ---------- */
   document.addEventListener("click", async (e) => {
     const el = e.target.closest("[data-action]");
@@ -1179,9 +1319,71 @@
         state.view = el.dataset.view;
         state.modal = null;
         state.confirmDelete = null;
+        if (state.view === "admin") {
+          state.admin.readingChat = null;
+          state.admin.chatMessages = [];
+          await loadAdmin();
+        }
         render();
         window.scrollTo(0, 0);
         break;
+
+      case "admin-read": {
+        state.busy = true;
+        const { data, error } = await db.rpc("admin_read_chat", { p_chat: id });
+        state.busy = false;
+        if (error) return toast(error.message, "error");
+        state.admin.readingChat = id;
+        state.admin.chatMessages = data || [];
+        render();
+        break;
+      }
+
+      case "admin-close": {
+        if (!confirm("Close this case? The thread is then kept 90 more days and deleted.")) return;
+        state.busy = true;
+        const { error } = await db.rpc("admin_close_report", { p_report: id });
+        state.busy = false;
+        if (error) return toast(error.message, "error");
+        state.admin.readingChat = null;
+        await loadAdmin();
+        render();
+        toast("Case closed.");
+        break;
+      }
+
+      case "admin-suspend": {
+        if (!confirm("Suspend this account? They can't post, join or send messages until you restore it.")) return;
+        state.busy = true;
+        const { error } = await db.rpc("admin_set_member", { p_user: id, p_status: "suspended", p_can_invite: false });
+        state.busy = false;
+        if (error) return toast(error.message, "error");
+        await loadAdmin();
+        render();
+        toast("Account suspended.");
+        break;
+      }
+
+      case "admin-restore": {
+        state.busy = true;
+        const { error } = await db.rpc("admin_set_member", { p_user: id, p_status: "active", p_can_invite: true });
+        state.busy = false;
+        if (error) return toast(error.message, "error");
+        await loadAdmin();
+        render();
+        toast("Account restored.");
+        break;
+      }
+
+      case "admin-unword": {
+        state.busy = true;
+        const { error } = await db.from("blocked_words").delete().eq("word", id);
+        state.busy = false;
+        if (error) return toast(error.message, "error");
+        await loadAdmin();
+        render();
+        break;
+      }
 
       case "swap": {
         const f = state.filters;
@@ -1509,6 +1711,18 @@
       const body = input.value;
       input.value = "";
       await sendMessage(body);
+    }
+
+    if (e.target.id === "word-form") {
+      const word = $("#word-input").value.trim().toLowerCase();
+      if (!/^[a-z0-9åäöéèüñ]+$/i.test(word)) return toast("One word only, letters and numbers.", "error");
+      state.busy = true;
+      const { error } = await db.from("blocked_words").insert({ word });
+      state.busy = false;
+      if (error) return toast(error.message, "error");
+      await loadAdmin();
+      render();
+      toast(`"${word}" is now blocked in trip messages.`);
     }
 
     if (e.target.id === "ride-form") { readForm(); await submitRide(); }
