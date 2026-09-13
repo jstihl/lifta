@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Lifta | Sign in</title>
+  <title>Lifta | Community ridesharing for company</title>
   <meta name="description" content="Community ridesharing for company, never for money." />
 
   <script src="https://cdn.tailwindcss.com"></script>
@@ -25,49 +25,133 @@
   <style type="text/tailwindcss">
     @layer components {
       .inp { @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base text-ink placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-teal-600; }
+      .inp-error { @apply border-rose-400; }
       .label { @apply block text-sm font-semibold text-slate-700 mb-1.5; }
-      .btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 text-base font-semibold text-white transition-colors hover:bg-teal-800 disabled:opacity-40 disabled:cursor-not-allowed; }
-      .btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-5 py-3 text-base font-semibold hover:bg-slate-50; }
+      .btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-800 disabled:opacity-40 disabled:cursor-not-allowed; }
+      .btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold hover:bg-slate-50 disabled:opacity-40; }
       .card { @apply bg-white rounded-2xl border border-slate-200; }
+      .chip { @apply inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors; }
+      .chip-off { @apply bg-white border-slate-300 text-slate-700 hover:border-slate-400; }
+      .chip-on { @apply bg-ink text-white border-transparent; }
       .tag { @apply inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700; }
+      .pill { @apply inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-semibold; }
     }
   </style>
 
   <style>
-    button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid #0F766E; outline-offset: 2px; }
+    button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #0F766E; outline-offset: 2px; }
+
     /* The road motif: asphalt with a dashed centre line */
-    .road-v { width: 10px; border-radius: 999px;
+    .road-v { width: 10px; border-radius: 999px; min-height: 28px;
       background-color: #2B4254;
       background-image: linear-gradient(to bottom, #FFC53D 0 55%, transparent 55% 100%);
       background-size: 2px 10px; background-repeat: repeat-y; background-position: center top; }
+    .road-h-sm { width: 36px; height: 8px; border-radius: 999px; flex-shrink: 0;
+      background-color: #2B4254;
+      background-image: linear-gradient(to right, #FFC53D 0 55%, transparent 55% 100%);
+      background-size: 9px 2px; background-repeat: repeat-x; background-position: left center; }
+    .road-hero { height: 46px; background-color: #1C3B4F;
+      background-image: linear-gradient(to right, #FFC53D 0 50%, transparent 50% 100%);
+      background-size: 40px 3px; background-repeat: repeat-x; background-position: left center; }
+    .hero-car { position: absolute; left: 0; top: 50%; margin-top: -16px; transform: translateX(72vw);
+      animation: drive 2.6s cubic-bezier(.22,.8,.3,1) .35s both; }
+    .hero-car.parked { animation: none; }
+    @keyframes drive { from { transform: translateX(-60px); } to { transform: translateX(72vw); } }
+
     .pop { animation: pop .18s ease-out both; }
-    @keyframes pop { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-    @media (prefers-reduced-motion: reduce) { .pop { animation: none; } }
+    @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .hero-car, .pop, .spin { animation: none; } }
   </style>
 </head>
 
-<body class="bg-paper text-ink font-sans antialiased min-h-screen">
+<body class="bg-paper text-ink font-sans antialiased">
   <div id="app" class="min-h-screen"></div>
-  <div id="toasts" class="fixed z-50 bottom-6 inset-x-4 md:inset-x-auto md:right-6 flex flex-col gap-2 md:w-96" aria-live="polite"></div>
+  <div id="modal-root"></div>
+  <div id="toasts" class="fixed z-50 bottom-24 md:bottom-6 inset-x-4 md:inset-x-auto md:right-6 flex flex-col gap-2 md:w-96" aria-live="polite"></div>
 
   <script>
   /* =====================================================================
-     Lifta: sign-in and profile, connected to Supabase.
-     Three states: signed out, signed in without a profile (needs an
-     invite code), signed in with a profile.
+     Lifta: community ridesharing for company, never for money.
+     Everything lives in Supabase. The rules that matter (no money, no
+     links, who may read what, rides deleted at departure) are enforced
+     in the database, not here.
      ===================================================================== */
 
   const SUPABASE_URL = "https://nboyoauxhojfnvpamzna.supabase.co";
   const SUPABASE_KEY = "sb_publishable_6fFL45IwDGxTmdZKc698qw_mD4LUhpk";
   const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+  /* ---------- Helpers ---------- */
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
   const icon = (n, c = "w-4 h-4") => `<i data-lucide="${n}" class="${c}" aria-hidden="true"></i>`;
   const refreshIcons = () => window.lucide && window.lucide.createIcons();
-  const fmtDate = (d) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const firstName = (n) => (n || "").split(" ")[0];
+  const pad = (x) => String(x).padStart(2, "0");
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const reducedMotion = !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-  const state = { user: null, profile: null, invites: [], busy: false };
+  // Same money filter as the database, so users are warned before they submit.
+  const MONEY = /(€|\$|£|\beuros?\b|\bpay\w*|\bpaid\b|\bcash\b|\bfees?\b|\bprice\b|\bcosts?\b|revolut|paypal|\bswish\w*|\bpetrol money\b|\bfuel money\b|\bgas money\b|\bchip in\b|\bcontribut\w*)/i;
+  const LINK  = /(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|net|org|cy|se|eu|io|ly|me|app|info|link)\b)/i;
+
+  const VIBES = [
+    { id: "chatty",    label: "Chatty",        emoji: "🗣️" },
+    { id: "quiet",     label: "Quiet & calm",  emoji: "🤫" },
+    { id: "podcast",   label: "Podcast",       emoji: "🎧" },
+    { id: "smokefree", label: "Smoke-free",    emoji: "🚭" },
+    { id: "music",     label: "Music on",      emoji: "🎶" },
+    { id: "pets",      label: "Pets welcome",  emoji: "🐾" },
+    { id: "luggage",   label: "Room for bags", emoji: "🧳" },
+  ];
+  const vibeById = Object.fromEntries(VIBES.map((v) => [v.id, v]));
+
+  const LEVELS = {
+    email:  { label: "Email verified", icon: "mail" },
+    google: { label: "Email verified", icon: "badge-check" },
+    phone:  { label: "Phone verified", icon: "phone" },
+    id:     { label: "ID verified",    icon: "shield-check" },
+  };
+
+  const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const localISO = (d) => `${dayKey(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+  function formatDay(iso) {
+    const d = new Date(iso), today = new Date();
+    const tomorrow = new Date(); tomorrow.setDate(today.getDate() + 1);
+    if (dayKey(d) === dayKey(today)) return "Today";
+    if (dayKey(d) === dayKey(tomorrow)) return "Tomorrow";
+    return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  }
+  const formatTime = (iso) => new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  const fmtDuration = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`);
+  const arrivalTime = (iso, mins) => formatTime(new Date(new Date(iso).getTime() + mins * 60000));
+
+  /* ---------- State ---------- */
+  const state = {
+    view: "find",
+    user: null, profile: null,
+    cities: [], rides: [], myRequests: [], invites: [],
+    filters: { from: "", to: "", when: "any", vibes: [] },
+    form: null,
+    formErrors: {},
+    modal: null,
+    confirmDelete: null,
+    loading: true,
+    busy: false,
+    heroPlayed: false,
+  };
+
+  const emptyForm = () => {
+    const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0);
+    return { from: "", to: "", departs: localISO(d), seats: 3, vibes: ["smokefree"], points: [""], note: "", pledge: false };
+  };
+  state.form = emptyForm();
+
+  const rideById = (id) => state.rides.find((r) => r.id === id);
+  const requestFor = (rideId) => state.myRequests.find((q) => q.ride_id === rideId);
 
   /* ---------- Notices ---------- */
   function toast(text, tone = "ok") {
@@ -79,104 +163,479 @@
     setTimeout(() => el.remove(), 5000);
   }
 
-  /* ---------- Shared pieces ---------- */
-  const logo = `<span class="inline-flex items-center gap-2.5">
-    <span class="w-9 h-9 rounded-xl bg-ink grid place-items-center" aria-hidden="true"><span class="road-v" style="height:22px;width:8px"></span></span>
-    <span class="font-display text-2xl font-extrabold tracking-tight">Lifta</span></span>`;
-
-  // Permanent reminder of the core rule. Not dismissible by design.
-  const banner = `<div class="bg-sun text-ink" role="note">
-    <p class="max-w-4xl mx-auto px-4 py-2 flex items-center justify-center gap-2 text-sm font-semibold text-center">
-      ${icon("heart-handshake", "w-4 h-4 shrink-0")}
-      Lifta is always free. Never ask for or offer money. You share the ride for the company.
-    </p></div>`;
-
-  function avatar(name, size = "lg") {
-    const tones = ["bg-teal-100 text-teal-800","bg-amber-100 text-amber-900","bg-sky-100 text-sky-800","bg-rose-100 text-rose-800","bg-lime-100 text-lime-800"];
-    const tone = tones[[...name].reduce((s, c) => s + c.charCodeAt(0), 0) % tones.length];
-    const initials = name.split(" ").map((p) => p[0]).slice(0, 2).join("");
-    const sizes = { sm: "w-9 h-9 text-sm", lg: "w-20 h-20 text-2xl" };
+  /* ---------- Building blocks ---------- */
+  const TONES = ["bg-teal-100 text-teal-800","bg-amber-100 text-amber-900","bg-sky-100 text-sky-800","bg-rose-100 text-rose-800","bg-lime-100 text-lime-800"];
+  function avatar(name, size = "md") {
+    const tone = TONES[[...(name || "?")].reduce((s, c) => s + c.charCodeAt(0), 0) % TONES.length];
+    const initials = (name || "?").split(" ").map((p) => p[0]).slice(0, 2).join("");
+    const sizes = { sm: "w-9 h-9 text-sm", md: "w-11 h-11 text-base", lg: "w-20 h-20 text-2xl" };
     return `<div aria-hidden="true" class="${sizes[size]} ${tone} rounded-full grid place-items-center font-display font-extrabold shrink-0">${esc(initials)}</div>`;
   }
 
-  // The badge says exactly what has been checked, never more.
-  const LEVELS = {
-    email:  { label: "Email verified", icon: "mail" },
-    google: { label: "Email verified via Google", icon: "badge-check" },
-    phone:  { label: "Phone verified", icon: "phone" },
-    id:     { label: "ID verified", icon: "shield-check" },
+  function verifiedBadge(level) {
+    const l = LEVELS[level] || LEVELS.email;
+    return `<span class="inline-flex items-center gap-1 text-xs font-semibold text-teal-800 bg-teal-50 rounded-full px-2 py-0.5" title="${l.label}">
+      ${icon(l.icon, "w-3.5 h-3.5")}${l.label}</span>`;
+  }
+
+  function rating(stats) {
+    if (!stats || !stats.review_count) return `<span class="text-sm text-slate-500">No reviews yet</span>`;
+    return `<span class="inline-flex items-center gap-1 text-sm">
+      ${icon("star", "w-4 h-4 fill-amber-400 text-amber-400")}
+      <span class="font-semibold">${Number(stats.avg_rating).toFixed(1)}</span>
+      <span class="text-slate-500">(${stats.review_count})</span></span>`;
+  }
+
+  const vibeTag = (id) => (vibeById[id] ? `<span class="tag"><span aria-hidden="true">${vibeById[id].emoji}</span>${vibeById[id].label}</span>` : "");
+
+  function seatDots(total, left) {
+    const dots = Array.from({ length: total }, (_, i) => `<span class="w-3 h-3 rounded ${i < left ? "bg-teal-600" : "bg-slate-300"}"></span>`).join("");
+    return `<div class="flex items-center gap-2"><div class="flex gap-1" aria-hidden="true">${dots}</div>
+      <span class="text-sm text-slate-600">${left === 0 ? "Full" : `${plural(left, "seat", "seats")} left`}</span></div>`;
+  }
+
+  // The signature element: departure dot, dashed road, destination pin.
+  function routeRibbon(r) {
+    return `<div class="flex gap-3">
+      <div class="flex flex-col items-center pt-1.5 pb-1" aria-hidden="true">
+        <span class="w-3.5 h-3.5 rounded-full border-4 border-teal-600 bg-white"></span>
+        <span class="road-v flex-1 my-1.5"></span>
+        ${icon("map-pin", "w-5 h-5 text-ink fill-sun")}
+      </div>
+      <div class="flex-1 flex flex-col justify-between gap-3 min-w-0">
+        <div>
+          <p class="font-display text-xl font-extrabold leading-tight truncate">${esc(r.from_city)}</p>
+          <p class="text-sm text-slate-500">Leaves ${formatTime(r.departs_at)}</p>
+        </div>
+        <p class="text-xs text-slate-500">About ${fmtDuration(r.est_minutes)}</p>
+        <div>
+          <p class="font-display text-xl font-extrabold leading-tight truncate">${esc(r.to_city)}</p>
+          <p class="text-sm text-slate-500">Arrives around ${arrivalTime(r.departs_at, r.est_minutes)}</p>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  const routeInline = (from, to) => `<p class="flex items-center gap-2 font-display text-lg font-extrabold leading-tight">
+    <span class="truncate">${esc(from)}</span><span class="road-h-sm" aria-label="to"></span><span class="truncate">${esc(to)}</span></p>`;
+
+  function citySelect(id, value, attrs = "") {
+    return `<select id="${id}" ${attrs} class="inp appearance-none">
+      <option value="">Any town</option>
+      ${state.cities.map((c) => `<option value="${esc(c.name)}" ${c.name === value ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
+    </select>`;
+  }
+
+  function stepper(target, value, min, max) {
+    return `<div class="inline-flex items-center rounded-full border border-slate-300 bg-white" role="group" aria-label="Seats" data-min="${min}" data-max="${max}">
+      <button type="button" data-action="step" data-target="${target}" data-delta="-1" ${value <= min ? "disabled" : ""}
+        class="w-9 h-9 grid place-items-center rounded-full hover:bg-slate-100 disabled:opacity-30" aria-label="Fewer seats">${icon("minus")}</button>
+      <span class="w-6 text-center font-semibold tabular-nums" aria-live="polite">${value}</span>
+      <button type="button" data-action="step" data-target="${target}" data-delta="1" ${value >= max ? "disabled" : ""}
+        class="w-9 h-9 grid place-items-center rounded-full hover:bg-slate-100 disabled:opacity-30" aria-label="More seats">${icon("plus")}</button>
+    </div>`;
+  }
+
+  const noMoneyNote = () => `<div class="flex gap-3 rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900">
+    ${icon("ban", "w-5 h-5 shrink-0 mt-0.5")}
+    <p>No money on Lifta. Don't offer fuel money and don't accept it. If anyone asks you to pay, report them from their profile.</p></div>`;
+
+  /* ---------- Ride card ---------- */
+  function rideCard(r) {
+    const d = r.driver || {};
+    const mine = r.driver_id === state.user.id;
+    const q = requestFor(r.id);
+
+    let action;
+    if (mine) {
+      action = state.confirmDelete === r.id
+        ? `<div class="flex items-center gap-2 text-sm">
+             <span class="font-semibold">Cancel this ride?</span>
+             <button data-action="delete-ride" data-id="${r.id}" class="rounded-full bg-rose-700 text-white px-3 py-1.5 font-semibold">Yes, cancel</button>
+             <button data-action="cancel-delete" class="rounded-full border border-slate-300 px-3 py-1.5 font-semibold">Keep it</button>
+           </div>`
+        : `<div class="flex items-center gap-1">
+             <span class="pill bg-slate-100 text-slate-700">Your ride</span>
+             <button data-action="ask-delete" data-id="${r.id}" class="w-9 h-9 grid place-items-center rounded-full text-rose-700 hover:bg-rose-50" aria-label="Cancel this ride">${icon("trash-2")}</button>
+           </div>`;
+    } else if (q && q.status === "pending") {
+      action = `<div class="flex items-center gap-3">
+        <button data-action="withdraw" data-id="${q.id}" class="text-sm font-semibold text-rose-700 underline underline-offset-4">Withdraw</button>
+        <span class="pill bg-amber-100 text-amber-900">${icon("hourglass")} Request sent</span></div>`;
+    } else if (q && q.status === "accepted") {
+      action = `<div class="flex items-center gap-3">
+        <button data-action="withdraw" data-id="${q.id}" class="text-sm font-semibold text-rose-700 underline underline-offset-4">Leave</button>
+        <span class="pill bg-teal-100 text-teal-900">${icon("circle-check")} You're in</span></div>`;
+    } else if (r.seats_left === 0) {
+      action = `<span class="pill bg-slate-100 text-slate-500">Full</span>`;
+    } else {
+      action = `<button data-action="open-join" data-id="${r.id}" class="btn-primary">Request to join</button>`;
+    }
+
+    return `<article class="card p-5 flex flex-col gap-4">
+      <header class="flex items-start justify-between gap-3">
+        <button type="button" data-action="open-profile" data-id="${r.driver_id}" class="flex items-center gap-3 text-left rounded-lg min-w-0 group">
+          ${avatar(d.full_name)}
+          <div class="min-w-0">
+            <p class="font-semibold leading-tight truncate group-hover:underline">${esc(d.full_name || "Member")}</p>
+            <div class="flex items-center gap-2 mt-1 flex-wrap">${rating(r.driverRating)}${verifiedBadge(d.verification_level)}</div>
+          </div>
+        </button>
+        <div class="text-right shrink-0">
+          <p class="text-sm font-semibold">${formatDay(r.departs_at)}</p>
+          <p class="text-sm text-slate-500">${formatTime(r.departs_at)}</p>
+        </div>
+      </header>
+
+      ${routeRibbon(r)}
+
+      ${r.note ? `<p class="text-sm text-slate-600 leading-relaxed">${esc(r.note)}</p>` : ""}
+      ${r.vibes?.length ? `<div class="flex flex-wrap gap-1.5">${r.vibes.map(vibeTag).join("")}</div>` : ""}
+
+      <p class="flex items-start gap-2 text-sm text-slate-600">
+        ${icon("map-pin", "w-4 h-4 shrink-0 mt-0.5 text-slate-400")}
+        <span>${q && q.status === "accepted"
+          ? `Meeting at <span class="font-semibold">${esc(q.pickup)}</span>`
+          : `${plural(r.meeting_points.length, "meeting point", "meeting points")} in ${esc(r.from_city)}`}</span></p>
+
+      <footer class="flex items-center justify-between gap-3 pt-4 border-t border-slate-100 mt-auto flex-wrap">
+        ${seatDots(r.seats_total, r.seats_left)}
+        ${action}
+      </footer>
+    </article>`;
+  }
+
+  /* ---------- View: Find a ride ---------- */
+  function findView() {
+    const f = state.filters;
+    const whens = [["any","Any day"],["today","Today"],["tomorrow","Tomorrow"],["week","Next 7 days"]];
+    return `
+    <section class="bg-ink text-white relative overflow-hidden">
+      <div class="max-w-6xl mx-auto px-4 pt-10 pb-12 sm:pt-14 sm:pb-14">
+        <h1 class="font-display text-4xl sm:text-6xl font-extrabold leading-none tracking-tight max-w-2xl">Going somewhere? Take someone along.</h1>
+        <p class="mt-5 max-w-lg text-lg text-slate-300 leading-relaxed">Drivers with empty seats meet people heading the same way. Nobody pays. Everybody gets company.</p>
+      </div>
+      <div class="road-hero relative" aria-hidden="true">${icon("car", `hero-car w-8 h-8 text-sun ${state.heroPlayed ? "parked" : ""}`)}</div>
+    </section>
+
+    <div class="max-w-6xl mx-auto px-4 py-6 sm:py-8">
+      <div class="card p-4 grid gap-3 md:grid-cols-12 md:items-end">
+        <div class="md:col-span-4">
+          <label for="q-from" class="label">From</label>
+          ${citySelect("q-from", f.from, 'data-filter="from"')}
+        </div>
+        <div class="md:col-span-1 flex justify-center md:pb-1">
+          <button type="button" data-action="swap" class="w-10 h-10 grid place-items-center rounded-full border border-slate-300 hover:bg-slate-100" aria-label="Swap from and to">
+            ${icon("arrow-up-down", "w-4 h-4 md:rotate-90")}</button>
+        </div>
+        <div class="md:col-span-4">
+          <label for="q-to" class="label">To</label>
+          ${citySelect("q-to", f.to, 'data-filter="to"')}
+        </div>
+        <div class="md:col-span-3">
+          <label for="q-when" class="label">When</label>
+          <select id="q-when" data-filter="when" class="inp appearance-none">
+            ${whens.map(([v, l]) => `<option value="${v}" ${f.when === v ? "selected" : ""}>${l}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+
+      <div id="vibe-filters" class="mt-4 flex flex-wrap gap-2" role="group" aria-label="Filter by vibe">${vibeChips()}</div>
+
+      <div class="mt-8 flex items-baseline justify-between gap-4">
+        <h2 id="results-title" class="font-display text-2xl font-extrabold"></h2>
+        <button id="clear-filters" data-action="clear-filters" class="hidden text-sm font-semibold text-teal-800 underline underline-offset-4">Clear filters</button>
+      </div>
+      <div id="results" class="mt-4"></div>
+    </div>`;
+  }
+
+  const vibeChips = () => VIBES.map((v) => {
+    const on = state.filters.vibes.includes(v.id);
+    return `<button type="button" data-action="filter-vibe" data-id="${v.id}" aria-pressed="${on}" class="chip ${on ? "chip-on" : "chip-off"}">
+      <span aria-hidden="true">${v.emoji}</span>${v.label}</button>`;
+  }).join("");
+
+  function filteredRides() {
+    const f = state.filters;
+    const now = new Date();
+    const end = new Date(); end.setDate(now.getDate() + 7);
+    const tomorrow = new Date(); tomorrow.setDate(now.getDate() + 1);
+    return state.rides.filter((r) => {
+      if (f.from && r.from_city !== f.from) return false;
+      if (f.to && r.to_city !== f.to) return false;
+      const d = new Date(r.departs_at);
+      if (f.when === "today" && dayKey(d) !== dayKey(now)) return false;
+      if (f.when === "tomorrow" && dayKey(d) !== dayKey(tomorrow)) return false;
+      if (f.when === "week" && d > end) return false;
+      if (f.vibes.length && !f.vibes.every((v) => r.vibes.includes(v))) return false;
+      return true;
+    });
+  }
+
+  const hasFilters = () => {
+    const f = state.filters;
+    return !!(f.from || f.to || f.when !== "any" || f.vibes.length);
   };
 
-  /* ---------- 1. Signed out ---------- */
-  function viewSignedOut() {
-    return `${banner}
-    <div class="max-w-md mx-auto px-4 py-16">
-      <div class="text-center">${logo}</div>
-      <h1 class="mt-8 font-display text-4xl font-extrabold tracking-tight text-center leading-tight">Going somewhere? Take someone along.</h1>
-      <p class="mt-4 text-lg text-slate-600 text-center leading-relaxed">Drivers with empty seats meet people heading the same way. Nobody pays. Everybody gets company.</p>
+  function renderResults() {
+    const box = $("#results");
+    if (!box) return;
+    const list = filteredRides();
+    $("#results-title").textContent = state.loading ? "Loading rides…" : plural(list.length, "ride", "rides");
+    $("#clear-filters").classList.toggle("hidden", !hasFilters());
 
-      <div class="card mt-10 p-6">
-        <button data-action="google" class="btn-primary w-full">${icon("log-in", "w-5 h-5")} Continue with Google</button>
-        <p class="mt-4 text-sm text-slate-500 text-center">Lifta is invite-only. You need a code from someone who is already a member.</p>
-      </div>
-
-      <ul class="mt-8 space-y-3 text-sm text-slate-600">
-        <li class="flex gap-3">${icon("user", "w-4 h-4 shrink-0 mt-0.5")} Real names. You always know who you are riding with.</li>
-        <li class="flex gap-3">${icon("ban", "w-4 h-4 shrink-0 mt-0.5")} No money, ever.</li>
-        <li class="flex gap-3">${icon("trash-2", "w-4 h-4 shrink-0 mt-0.5")} Rides are deleted once they depart. We keep nothing we don't need.</li>
-      </ul>
-    </div>`;
+    box.innerHTML = state.loading
+      ? `<div class="py-12 text-center text-slate-500">${icon("loader-circle", "spin w-6 h-6 mx-auto")}</div>`
+      : list.length
+        ? `<div class="grid gap-4 lg:grid-cols-2">${list.map(rideCard).join("")}</div>`
+        : `<div class="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
+            ${icon("car", "w-10 h-10 mx-auto text-slate-400")}
+            <p class="mt-3 font-semibold text-lg">${state.rides.length ? "No rides match these filters." : "No rides posted yet."}</p>
+            <p class="mt-1 text-slate-600">${state.rides.length ? "Try another day or fewer vibe tags." : "Be the first. Post a trip you're already making."}</p>
+            <button data-action="nav" data-view="post" class="btn-primary mt-5">Post a ride</button>
+          </div>`;
+    refreshIcons();
   }
 
-  /* ---------- 2. Signed in, no profile yet ---------- */
-  function viewNeedsInvite() {
-    return `${banner}
-    <div class="max-w-md mx-auto px-4 py-16">
-      <div class="text-center">${logo}</div>
-      <h1 class="mt-8 font-display text-3xl font-extrabold tracking-tight text-center">Almost in</h1>
-      <p class="mt-3 text-slate-600 text-center">Signed in as ${esc(state.user.email)}. Add your invite code and your name.</p>
+  /* ---------- View: Post a ride ---------- */
+  function postView() {
+    const f = state.form, e = state.formErrors;
+    const err = (k) => e[k] ? `<p class="mt-1.5 text-sm text-rose-700" role="alert">${esc(e[k])}</p>` : "";
 
-      <form id="join-form" class="card mt-8 p-6 space-y-5">
-        <div>
-          <label for="j-name" class="label">Your name</label>
-          <input id="j-name" class="inp" placeholder="First Last" autocomplete="name"
-                 value="${esc(state.user.user_metadata?.full_name || "")}" />
-          <p class="mt-1.5 text-sm text-slate-500">Use your real name. Others see it when you drive or ride along.</p>
+    return `
+    <div class="max-w-3xl mx-auto px-4 py-8 sm:py-12">
+      <h1 class="font-display text-4xl sm:text-5xl font-extrabold tracking-tight">Post a ride</h1>
+      <p class="mt-3 max-w-xl text-lg text-slate-600">Tell people where you're headed and what the ride is like. They'll ask to join, and you choose who comes.</p>
+
+      <form id="ride-form" novalidate class="card mt-8 p-5 sm:p-6 space-y-6">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label for="f-from" class="label">Leaving from</label>
+            <select id="f-from" data-field="from" class="inp appearance-none ${e.from ? "inp-error" : ""}">
+              <option value="">Choose a town</option>
+              ${state.cities.map((c) => `<option value="${esc(c.name)}" ${c.name === f.from ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
+            </select>${err("from")}
+          </div>
+          <div>
+            <label for="f-to" class="label">Going to</label>
+            <select id="f-to" data-field="to" class="inp appearance-none ${e.to ? "inp-error" : ""}">
+              <option value="">Choose a town</option>
+              ${state.cities.map((c) => `<option value="${esc(c.name)}" ${c.name === f.to ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
+            </select>${err("to")}
+          </div>
         </div>
+        <p class="text-sm text-slate-500 -mt-2">Heading somewhere just outside a town on the list? Pick the nearest one and say the rest in your meeting point or note.</p>
+
         <div>
-          <label for="j-code" class="label">Invite code</label>
-          <input id="j-code" class="inp uppercase tracking-widest" placeholder="ABC1234XYZ" autocomplete="off" maxlength="10" />
+          <label for="f-departs" class="label">Departure</label>
+          <input id="f-departs" type="datetime-local" data-field="departs" value="${esc(f.departs)}" class="inp ${e.departs ? "inp-error" : ""}" />
+          ${err("departs")}
         </div>
-        <button type="submit" class="btn-primary w-full">Join Lifta</button>
+
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <p class="text-sm font-semibold text-slate-700">Free seats</p>
+            <p class="text-sm text-slate-500">Count only seats with a seatbelt.</p>
+          </div>
+          ${stepper("form", f.seats, 1, 4)}
+        </div>
+
+        <fieldset>
+          <legend class="text-sm font-semibold text-slate-700 mb-2">What's the ride like?</legend>
+          <div id="form-vibes" class="grid grid-cols-2 sm:grid-cols-3 gap-2">${formVibes()}</div>
+        </fieldset>
+
+        <div>
+          <label class="label">Meeting points</label>
+          <p class="text-sm text-slate-500 mb-2">Public places only, like a square, a marina or a petrol station. Never your home address.</p>
+          <div id="points">${f.points.map((p, i) => pointRow(p, i)).join("")}</div>
+          ${err("points")}
+          ${f.points.length < 5 ? `<button type="button" data-action="add-point" class="btn-ghost mt-2 py-2 text-sm">${icon("plus")} Add another</button>` : ""}
+        </div>
+
+        <div>
+          <label for="f-note" class="label">A note for passengers</label>
+          <textarea id="f-note" data-field="note" rows="4" maxlength="280" class="inp resize-none ${e.note ? "inp-error" : ""}"
+            placeholder="Heading to work. Happy to drop you anywhere near the ring road.">${esc(f.note)}</textarea>
+          <p id="note-help" class="mt-1.5 text-sm ${e.note ? "text-rose-700" : "text-slate-500"}">${noteHelp()}</p>
+        </div>
+
+        <div>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" data-field="pledge" ${f.pledge ? "checked" : ""} class="mt-1 w-5 h-5 rounded border-slate-400 accent-teal-700" />
+            <span class="text-slate-700">I'm sharing this ride for free. I won't ask for or accept money, fuel costs or favours in return.</span>
+          </label>${err("pledge")}
+        </div>
+
+        <button type="submit" class="btn-primary w-full sm:w-auto px-6 py-3 text-base" ${state.busy ? "disabled" : ""}>Post ride</button>
       </form>
-
-      <button data-action="signout" class="mt-6 w-full text-sm font-semibold text-slate-600 underline underline-offset-4">Sign out</button>
     </div>`;
   }
 
-  /* ---------- 3. Signed in, has a profile ---------- */
-  function viewProfile() {
-    const p = state.profile;
-    const lvl = LEVELS[p.verification_level] || LEVELS.email;
-    const unused = state.invites.filter((i) => !i.used_by && new Date(i.expires_at) > new Date());
+  const pointRow = (value, i) => `<div class="flex gap-2 mb-2">
+    <input data-point="${i}" value="${esc(value)}" maxlength="80" class="inp" placeholder="${i === 0 ? "Finikoudes promenade" : "Another spot on the way"}" />
+    ${i > 0 ? `<button type="button" data-action="remove-point" data-id="${i}" class="w-11 h-11 shrink-0 grid place-items-center rounded-xl border border-slate-300 text-rose-700 hover:bg-rose-50" aria-label="Remove this meeting point">${icon("x")}</button>` : ""}
+  </div>`;
 
-    return `${banner}
-    <header class="bg-white border-b border-slate-200">
-      <div class="max-w-2xl mx-auto px-4 h-16 flex items-center justify-between">
-        ${logo}
-        <button data-action="signout" class="text-sm font-semibold text-slate-600 hover:underline">Sign out</button>
+  const formVibes = () => VIBES.map((v) => {
+    const on = state.form.vibes.includes(v.id);
+    return `<button type="button" data-action="form-vibe" data-id="${v.id}" aria-pressed="${on}"
+      class="flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium text-left transition-colors ${on ? "border-teal-600 bg-teal-50 text-teal-900" : "border-slate-300 hover:border-slate-400"}">
+      <span aria-hidden="true" class="text-base">${v.emoji}</span><span class="flex-1">${v.label}</span>${on ? icon("check", "w-4 h-4 text-teal-700") : ""}</button>`;
+  }).join("");
+
+  function noteHelp() {
+    const n = state.form.note;
+    if (MONEY.test(n)) return "Remove anything about money. Lifta rides are free.";
+    if (LINK.test(n)) return "Links are not allowed.";
+    return `${n.length}/280. Pickup details, stops on the way, anything useful.`;
+  }
+
+  function validateForm() {
+    const f = state.form, e = {};
+    if (!f.from) e.from = "Choose where you're leaving from.";
+    if (!f.to) e.to = "Choose where you're going.";
+    else if (f.from === f.to) e.to = "Pick a destination different from the departure.";
+    if (!f.departs) e.departs = "Pick a date and time.";
+    else if (new Date(f.departs).getTime() <= Date.now() + 10 * 60000) e.departs = "Departure has to be at least 10 minutes from now.";
+    const pts = f.points.map((p) => p.trim()).filter(Boolean);
+    if (!pts.length) e.points = "Add at least one meeting point.";
+    else if (pts.some((p) => p.length < 3)) e.points = "Each meeting point needs at least 3 characters.";
+    else if (pts.some((p) => MONEY.test(p) || LINK.test(p))) e.points = "Meeting points cannot mention money or contain links.";
+    if (MONEY.test(f.note)) e.note = "Remove anything about money.";
+    else if (LINK.test(f.note)) e.note = "Links are not allowed.";
+    if (!f.pledge) e.pledge = "Confirm the ride is free to post it.";
+    return e;
+  }
+
+  async function submitRide() {
+    const errors = validateForm();
+    state.formErrors = errors;
+    if (Object.keys(errors).length) { render(); return; }
+
+    const f = state.form;
+    state.busy = true;
+    const { error } = await db.from("rides").insert({
+      driver_id: state.user.id,
+      from_city: f.from,
+      to_city: f.to,
+      departs_at: new Date(f.departs).toISOString(),
+      seats_total: f.seats,
+      seats_left: f.seats,
+      vibes: f.vibes,
+      meeting_points: f.points.map((p) => p.trim()).filter(Boolean),
+      note: f.note.trim(),
+    });
+    state.busy = false;
+    if (error) return toast(error.message, "error");
+
+    state.form = emptyForm();
+    state.formErrors = {};
+    state.filters = { from: "", to: "", when: "any", vibes: [] };
+    state.view = "find";
+    await loadRides();
+    toast(`Ride posted. ${f.from} to ${f.to}.`);
+  }
+
+  /* ---------- View: My trips ---------- */
+  function tripsView() {
+    const driving = state.rides.filter((r) => r.driver_id === state.user.id);
+    const riding = state.myRequests.map((q) => ({ ...q, ride: rideById(q.ride_id) })).filter((q) => q.ride);
+
+    return `
+    <div class="max-w-3xl mx-auto px-4 py-8 sm:py-12">
+      <h1 class="font-display text-4xl sm:text-5xl font-extrabold tracking-tight mb-10">My trips</h1>
+
+      <section>
+        <h2 class="font-display text-2xl font-extrabold mb-4">You're driving</h2>
+        ${driving.length ? `<div class="space-y-4">${driving.map(drivingCard).join("")}</div>` : emptyBox("You haven't posted a ride yet. Driving somewhere soon? Offer your empty seats.", "Post a ride", "post")}
+      </section>
+
+      <section class="mt-10">
+        <h2 class="font-display text-2xl font-extrabold mb-4">You're riding</h2>
+        ${riding.length ? `<div class="space-y-4">${riding.map(ridingCard).join("")}</div>` : emptyBox("No ride requests yet. Find someone heading your way.", "Find a ride", "find")}
+      </section>
+    </div>`;
+  }
+
+  const emptyBox = (text, cta, view) => `<div class="rounded-2xl border border-dashed border-slate-300 bg-white p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <p class="text-slate-600">${text}</p>
+    <button data-action="nav" data-view="${view}" class="btn-primary shrink-0">${cta}</button></div>`;
+
+  function drivingCard(r) {
+    const pending = (r.requests || []).filter((i) => i.status === "pending");
+    const accepted = (r.requests || []).filter((i) => i.status === "accepted");
+    return `<div class="card p-5">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          ${routeInline(r.from_city, r.to_city)}
+          <p class="mt-1 text-sm text-slate-600">${formatDay(r.departs_at)} at ${formatTime(r.departs_at)}. ${r.seats_left} of ${r.seats_total} seats open.</p>
+        </div>
+        ${state.confirmDelete === r.id
+          ? `<div class="flex items-center gap-2 text-sm">
+               <button data-action="delete-ride" data-id="${r.id}" class="rounded-full bg-rose-700 text-white px-3 py-1.5 font-semibold">Yes, cancel</button>
+               <button data-action="cancel-delete" class="rounded-full border border-slate-300 px-3 py-1.5 font-semibold">Keep it</button></div>`
+          : `<button data-action="ask-delete" data-id="${r.id}" class="inline-flex items-center gap-1.5 text-sm font-semibold text-rose-700 rounded-full px-3 py-2 hover:bg-rose-50">${icon("trash-2")} Cancel ride</button>`}
       </div>
-    </header>
 
-    <div class="max-w-2xl mx-auto px-4 py-8 space-y-6">
+      ${pending.map((q) => {
+        const p = q.passenger || {};
+        return `<div class="pop mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
+          <div class="flex items-center gap-3">
+            <button data-action="open-profile" data-id="${q.passenger_id}" class="rounded-full">${avatar(p.full_name, "sm")}</button>
+            <div class="min-w-0">
+              <p class="font-semibold leading-tight">${esc(p.full_name || "Member")} wants to join</p>
+              <div class="flex items-center gap-2 mt-0.5 flex-wrap">${verifiedBadge(p.verification_level)}</div>
+            </div>
+          </div>
+          <p class="mt-3 flex gap-2 text-sm text-slate-700">${icon("map-pin", "w-4 h-4 shrink-0 mt-0.5 text-slate-500")} Pickup at ${esc(q.pickup)}</p>
+          ${q.message ? `<p class="mt-2 flex gap-2 text-sm text-slate-700">${icon("message-circle", "w-4 h-4 shrink-0 mt-0.5 text-slate-500")}${esc(q.message)}</p>` : ""}
+          <div class="mt-4 flex flex-wrap items-center gap-2">
+            <button data-action="respond" data-id="${q.id}" data-accept="1" class="btn-primary" ${q.seats > r.seats_left ? "disabled" : ""}>Accept</button>
+            <button data-action="respond" data-id="${q.id}" data-accept="0" class="btn-ghost">Decline</button>
+            <span class="text-sm text-slate-600">${q.seats > r.seats_left ? "Not enough free seats left." : `Needs ${plural(q.seats, "seat", "seats")}`}</span>
+          </div>
+        </div>`;
+      }).join("")}
+
+      ${accepted.length ? `<p class="mt-4 flex items-center gap-2 text-sm font-semibold text-teal-800">
+        ${icon("users")} Riding with you: ${accepted.map((q) => esc(firstName(q.passenger?.full_name))).join(", ")}</p>` : ""}
+      ${!pending.length && !accepted.length ? `<p class="mt-4 text-sm text-slate-500">No requests yet. They show up here as soon as someone asks to join.</p>` : ""}
+    </div>`;
+  }
+
+  function ridingCard(q) {
+    const r = q.ride, d = r.driver || {};
+    const confirmed = q.status === "accepted";
+    return `<div class="card p-5">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          ${routeInline(r.from_city, r.to_city)}
+          <p class="mt-1 text-sm text-slate-600">${formatDay(r.departs_at)} at ${formatTime(r.departs_at)} with ${esc(d.full_name || "a member")}. ${plural(q.seats, "seat", "seats")}.</p>
+        </div>
+        ${confirmed
+          ? `<span class="pill bg-teal-100 text-teal-900">${icon("circle-check")} Seat confirmed</span>`
+          : `<span class="pill bg-amber-100 text-amber-900">${icon("hourglass")} Waiting for ${esc(firstName(d.full_name))}</span>`}
+      </div>
+      <p class="mt-3 flex gap-2 text-sm text-slate-600">${icon("map-pin", "w-4 h-4 shrink-0 mt-0.5")} Pickup at ${esc(q.pickup)}</p>
+      <button data-action="withdraw" data-id="${q.id}" class="mt-4 text-sm font-semibold text-rose-700 underline underline-offset-4">${confirmed ? "Leave this ride" : "Withdraw request"}</button>
+    </div>`;
+  }
+
+  /* ---------- View: Profile ---------- */
+  function profileView() {
+    const p = state.profile;
+    const unused = state.invites.filter((i) => !i.used_by && new Date(i.expires_at) > new Date());
+    return `
+    <div class="max-w-3xl mx-auto px-4 py-8 sm:py-12 space-y-6">
       <section class="card p-6">
         <div class="flex flex-col sm:flex-row sm:items-center gap-5">
-          ${avatar(p.full_name)}
+          ${avatar(p.full_name, "lg")}
           <div class="min-w-0">
             <h1 class="font-display text-3xl font-extrabold tracking-tight">${esc(p.full_name)}</h1>
             <div class="mt-2 flex flex-wrap items-center gap-3">
-              <span class="inline-flex items-center gap-1 text-xs font-semibold text-teal-800 bg-teal-50 rounded-full px-2 py-0.5">
-                ${icon(lvl.icon, "w-3.5 h-3.5")}${lvl.label}</span>
+              ${verifiedBadge(p.verification_level)}
               ${p.role === "admin" ? `<span class="tag">${icon("shield", "w-3.5 h-3.5")}Admin</span>` : ""}
             </div>
           </div>
@@ -192,7 +651,7 @@
 
         <dl class="mt-6 grid grid-cols-2 gap-4 border-t border-slate-100 pt-5">
           <div><dt class="text-sm text-slate-500">Member since</dt>
-            <dd class="mt-1 font-semibold">${fmtDate(p.created_at)}</dd></div>
+            <dd class="mt-1 font-semibold">${new Date(p.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</dd></div>
           <div><dt class="text-sm text-slate-500">Invites left</dt>
             <dd class="mt-1 font-semibold">${p.role === "admin" ? "Unlimited" : p.invites_left}</dd></div>
         </dl>
@@ -204,43 +663,267 @@
         ${unused.length ? `<ul class="mt-4 space-y-2">${unused.map((i) => `
           <li class="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
             <span class="font-mono font-semibold tracking-widest">${esc(i.code)}</span>
-            <span class="text-sm text-slate-500">Valid until ${fmtDate(i.expires_at)}</span>
+            <span class="text-sm text-slate-500">Valid until ${new Date(i.expires_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
           </li>`).join("")}</ul>` : `<p class="mt-4 text-sm text-slate-500">No unused codes right now.</p>`}
         <button data-action="invite" class="btn-ghost mt-4">${icon("plus")} Create a code</button>
+      </section>
+
+      <section class="rounded-2xl bg-ink text-white p-6">
+        <h2 class="font-display text-xl font-extrabold flex items-center gap-2">${icon("shield-check", "w-5 h-5 text-sun")} How trust works on Lifta</h2>
+        <ul class="mt-4 space-y-3 text-slate-200 leading-relaxed">
+          <li class="flex gap-3">${icon("user-plus", "w-5 h-5 shrink-0 mt-0.5 text-teal-300")} Invite-only. Whoever brought you in vouches for you.</li>
+          <li class="flex gap-3">${icon("user", "w-5 h-5 shrink-0 mt-0.5 text-teal-300")} Real names. You always know who you're riding with.</li>
+          <li class="flex gap-3">${icon("map-pin", "w-5 h-5 shrink-0 mt-0.5 text-teal-300")} Public meeting points only. The exact spot shows once your seat is confirmed.</li>
+          <li class="flex gap-3">${icon("trash-2", "w-5 h-5 shrink-0 mt-0.5 text-teal-300")} A ride is deleted the moment it departs. We keep nothing we don't need.</li>
+          <li class="flex gap-3">${icon("ban", "w-5 h-5 shrink-0 mt-0.5 text-teal-300")} No money, ever. Asking for payment gets an account removed.</li>
+        </ul>
       </section>
 
       <section class="card p-6">
         <h2 class="font-display text-xl font-extrabold">Your account</h2>
         <p class="mt-1 text-sm text-slate-600">${esc(state.user.email)}</p>
-        <button data-action="delete" class="mt-4 text-sm font-semibold text-rose-700 underline underline-offset-4">Delete my account and all my data</button>
+        <div class="mt-4 flex flex-wrap gap-4">
+          <button data-action="signout" class="text-sm font-semibold text-slate-600 underline underline-offset-4">Sign out</button>
+          <button data-action="delete-account" class="text-sm font-semibold text-rose-700 underline underline-offset-4">Delete my account and all my data</button>
+        </div>
       </section>
+    </div>`;
+  }
+
+  /* ---------- Modals ---------- */
+  function modalFrame(title, body) {
+    return `<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="absolute inset-0 bg-ink/60" data-action="close-modal"></div>
+      <div class="pop relative bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl overflow-y-auto max-h-[90vh]">
+        <div class="flex items-center justify-between px-5 pt-5">
+          <h2 id="modal-title" class="font-display text-2xl font-extrabold">${esc(title)}</h2>
+          <button data-action="close-modal" class="w-9 h-9 grid place-items-center rounded-full hover:bg-slate-100" aria-label="Close">${icon("x", "w-5 h-5")}</button>
+        </div>
+        <div class="p-5">${body}</div>
+      </div></div>`;
+  }
+
+  function joinModal(m) {
+    const r = rideById(m.rideId);
+    if (!r) return "";
+    const d = r.driver || {};
+    return modalFrame(`Ride with ${firstName(d.full_name) || "a member"}`, `
+      <div class="rounded-xl bg-slate-50 p-4">
+        ${routeInline(r.from_city, r.to_city)}
+        <p class="mt-1 text-sm text-slate-600">${formatDay(r.departs_at)} at ${formatTime(r.departs_at)}. ${plural(r.seats_left, "seat", "seats")} open.</p>
+      </div>
+
+      <div class="mt-5">
+        <label class="label">Where would you like to be picked up?</label>
+        <div class="space-y-2">${r.meeting_points.map((p, i) => `
+          <label class="flex items-center gap-3 rounded-xl border px-4 py-3 cursor-pointer ${m.pickup === p ? "border-teal-600 bg-teal-50" : "border-slate-300"}">
+            <input type="radio" name="pickup" value="${esc(p)}" ${m.pickup === p ? "checked" : ""} class="w-4 h-4 accent-teal-700" data-pickup />
+            <span class="font-medium">${esc(p)}</span>
+          </label>`).join("")}</div>
+      </div>
+
+      <div class="mt-5 flex items-center justify-between">
+        <span class="font-semibold">Seats you need</span>
+        ${stepper("join", m.seats, 1, r.seats_left)}
+      </div>
+
+      <div class="mt-5">
+        <label for="join-msg" class="label">Say hi to ${esc(firstName(d.full_name) || "the driver")}</label>
+        <textarea id="join-msg" rows="3" maxlength="240" class="inp resize-none" placeholder="A little about you, and anything useful for the trip."></textarea>
+        <p id="join-help" class="mt-1.5 text-sm text-slate-500">The driver sees this with your request.</p>
+      </div>
+
+      <div class="mt-5">${noMoneyNote()}</div>
+
+      <div class="mt-6 flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
+        <button data-action="close-modal" class="btn-ghost">Cancel</button>
+        <button id="join-confirm" data-action="confirm-join" class="btn-primary" ${state.busy ? "disabled" : ""}>Send request</button>
+      </div>`);
+  }
+
+  function profileModal(m) {
+    const p = m.person;
+    if (!p) return modalFrame("Member", `<p class="text-slate-600">Could not load this profile.</p>`);
+    const upcoming = state.rides.filter((r) => r.driver_id === p.id).length;
+    return modalFrame(p.full_name, `
+      <div class="flex items-center gap-4">
+        ${avatar(p.full_name, "lg")}
+        <div class="space-y-1.5">
+          ${verifiedBadge(p.verification_level)}
+          <p class="text-sm text-slate-600">Member since ${new Date(p.created_at).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</p>
+        </div>
+      </div>
+      <dl class="mt-5 grid grid-cols-2 gap-3">
+        <div class="rounded-xl bg-slate-50 p-3"><dt class="text-sm text-slate-500">As a driver</dt><dd class="mt-1">${rating(m.asDriver)}</dd></div>
+        <div class="rounded-xl bg-slate-50 p-3"><dt class="text-sm text-slate-500">As a passenger</dt><dd class="mt-1">${rating(m.asPassenger)}</dd></div>
+      </dl>
+      ${p.bio ? `<p class="mt-5 text-slate-700 leading-relaxed">${esc(p.bio)}</p>` : ""}
+      ${upcoming ? `<p class="mt-3 text-sm font-semibold text-teal-800">${plural(upcoming, "upcoming ride", "upcoming rides")} on Lifta</p>` : ""}
+      ${p.id !== state.user.id ? `<button data-action="report" data-id="${p.id}" class="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-rose-700 underline underline-offset-4">${icon("flag")} Report this person</button>` : ""}
+    `);
+  }
+
+  function renderModal() {
+    const root = $("#modal-root");
+    const m = state.modal;
+    root.innerHTML = !m ? "" : m.type === "join" ? joinModal(m) : profileModal(m);
+    document.body.style.overflow = m ? "hidden" : "";
+    refreshIcons();
+  }
+
+  /* ---------- Shell ---------- */
+  const NAV = [
+    { id: "find",    label: "Find a ride", icon: "search" },
+    { id: "post",    label: "Post a ride", icon: "plus" },
+    { id: "trips",   label: "My trips",    icon: "route" },
+    { id: "profile", label: "Profile",     icon: "user" },
+  ];
+
+  const logo = `<span class="inline-flex items-center gap-2.5">
+    <span class="w-9 h-9 rounded-xl bg-ink grid place-items-center" aria-hidden="true"><span class="road-v" style="height:22px;min-height:0;width:8px"></span></span>
+    <span class="font-display text-2xl font-extrabold tracking-tight">Lifta</span></span>`;
+
+  const banner = `<div class="bg-sun text-ink" role="note">
+    <p class="max-w-6xl mx-auto px-4 py-2 flex items-center justify-center gap-2 text-sm font-semibold text-center">
+      ${icon("heart-handshake", "w-4 h-4 shrink-0")}
+      Lifta is always free. Never ask for or offer money. You share the ride for the company.
+    </p></div>`;
+
+  function shell(content) {
+    const pendingCount = state.rides
+      .filter((r) => r.driver_id === state.user.id)
+      .reduce((n, r) => n + (r.requests || []).filter((q) => q.status === "pending").length, 0);
+
+    return `
+    <div class="sticky top-0 z-40">
+      ${banner}
+      <header class="bg-white border-b border-slate-200">
+        <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+          <button data-action="nav" data-view="find" class="rounded-lg" aria-label="Lifta home">${logo}</button>
+          <nav class="hidden md:flex items-center gap-1" aria-label="Main">
+            ${NAV.map((n) => `<button data-action="nav" data-view="${n.id}" ${state.view === n.id ? 'aria-current="page"' : ""}
+              class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${state.view === n.id ? "bg-ink text-white" : "text-slate-600 hover:bg-slate-100"}">
+              ${icon(n.icon)}${n.label}
+              ${n.id === "trips" && pendingCount ? `<span class="ml-0.5 h-5 px-1.5 rounded-full bg-sun text-ink text-xs font-bold grid place-items-center">${pendingCount}</span>` : ""}
+            </button>`).join("")}
+          </nav>
+        </div>
+      </header>
+    </div>
+
+    <main class="pb-28 md:pb-16">${content}</main>
+
+    <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 grid grid-cols-4" aria-label="Main">
+      ${NAV.map((n) => {
+        const active = state.view === n.id;
+        return `<button data-action="nav" data-view="${n.id}" ${active ? 'aria-current="page"' : ""}
+          class="relative flex flex-col items-center gap-1 pt-3 pb-4 text-xs font-semibold ${active ? "text-teal-800" : "text-slate-500"}">
+          ${active ? '<span class="absolute top-0 inset-x-6 h-1 rounded-b-full bg-teal-700" aria-hidden="true"></span>' : ""}
+          <span class="relative">${icon(n.icon, "w-5 h-5")}
+            ${n.id === "trips" && pendingCount ? `<span class="absolute -top-1.5 -right-2.5 w-4 h-4 rounded-full bg-sun text-ink font-bold grid place-items-center" style="font-size:10px">${pendingCount}</span>` : ""}
+          </span>${n.label}</button>`;
+      }).join("")}
+    </nav>`;
+  }
+
+  /* ---------- Signed out / needs invite ---------- */
+  function signedOutView() {
+    return `${banner}
+    <div class="max-w-md mx-auto px-4 py-16">
+      <div class="text-center">${logo}</div>
+      <h1 class="mt-8 font-display text-4xl font-extrabold tracking-tight text-center leading-tight">Going somewhere? Take someone along.</h1>
+      <p class="mt-4 text-lg text-slate-600 text-center leading-relaxed">Drivers with empty seats meet people heading the same way. Nobody pays. Everybody gets company.</p>
+      <div class="card mt-10 p-6">
+        <button data-action="google" class="btn-primary w-full py-3 text-base">${icon("log-in", "w-5 h-5")} Continue with Google</button>
+        <p class="mt-4 text-sm text-slate-500 text-center">Lifta is invite-only. You need a code from someone who is already a member.</p>
+      </div>
+      <ul class="mt-8 space-y-3 text-sm text-slate-600">
+        <li class="flex gap-3">${icon("user", "w-4 h-4 shrink-0 mt-0.5")} Real names. You always know who you are riding with.</li>
+        <li class="flex gap-3">${icon("ban", "w-4 h-4 shrink-0 mt-0.5")} No money, ever.</li>
+        <li class="flex gap-3">${icon("trash-2", "w-4 h-4 shrink-0 mt-0.5")} Rides are deleted once they depart. We keep nothing we don't need.</li>
+      </ul>
+    </div>`;
+  }
+
+  function needsInviteView() {
+    return `${banner}
+    <div class="max-w-md mx-auto px-4 py-16">
+      <div class="text-center">${logo}</div>
+      <h1 class="mt-8 font-display text-3xl font-extrabold tracking-tight text-center">Almost in</h1>
+      <p class="mt-3 text-slate-600 text-center">Signed in as ${esc(state.user.email)}. Add your invite code and your name.</p>
+      <form id="join-lifta" class="card mt-8 p-6 space-y-5">
+        <div>
+          <label for="j-name" class="label">Your name</label>
+          <input id="j-name" class="inp" placeholder="First Last" autocomplete="name" value="${esc(state.user.user_metadata?.full_name || "")}" />
+          <p class="mt-1.5 text-sm text-slate-500">Use your real name. Others see it when you drive or ride along.</p>
+        </div>
+        <div>
+          <label for="j-code" class="label">Invite code</label>
+          <input id="j-code" class="inp uppercase tracking-widest" placeholder="ABC1234XYZ" autocomplete="off" maxlength="10" />
+        </div>
+        <button type="submit" class="btn-primary w-full py-3 text-base">Join Lifta</button>
+      </form>
+      <button data-action="signout" class="mt-6 w-full text-sm font-semibold text-slate-600 underline underline-offset-4">Sign out</button>
     </div>`;
   }
 
   /* ---------- Render ---------- */
   function render() {
     const app = $("#app");
-    if (!state.user) app.innerHTML = viewSignedOut();
-    else if (!state.profile) app.innerHTML = viewNeedsInvite();
-    else app.innerHTML = viewProfile();
+    if (!state.user) { app.innerHTML = signedOutView(); }
+    else if (!state.profile) { app.innerHTML = needsInviteView(); }
+    else {
+      const content = state.view === "find" ? findView()
+                    : state.view === "post" ? postView()
+                    : state.view === "trips" ? tripsView()
+                    : profileView();
+      app.innerHTML = shell(content);
+      if (state.view === "find") { renderResults(); state.heroPlayed = true; }
+    }
+    renderModal();
     refreshIcons();
   }
 
-  /* ---------- Load the signed-in user's data ---------- */
+  /* ---------- Data ---------- */
   async function loadSession() {
     const { data: { session } } = await db.auth.getSession();
     state.user = session?.user || null;
     state.profile = null;
-    state.invites = [];
+    if (!state.user) { state.loading = false; return render(); }
 
-    if (state.user) {
-      const { data: p } = await db.from("profiles").select("*").eq("id", state.user.id).maybeSingle();
-      state.profile = p || null;
-      if (p) {
-        const { data: inv } = await db.from("invites").select("*").order("created_at", { ascending: false });
-        state.invites = inv || [];
-      }
-    }
+    const { data: p } = await db.from("profiles").select("*").eq("id", state.user.id).maybeSingle();
+    state.profile = p || null;
+    if (!p) { state.loading = false; return render(); }
+
+    const [{ data: cities }, { data: invites }] = await Promise.all([
+      db.from("cities").select("*").order("sort"),
+      db.from("invites").select("*").order("created_at", { ascending: false }),
+    ]);
+    state.cities = cities || [];
+    state.invites = invites || [];
+    render();
+    await loadRides();
+  }
+
+  async function loadRides() {
+    state.loading = true;
+    renderResults();
+
+    // Rides with their driver, plus the requests on my own rides.
+    const [{ data: rides, error }, { data: mine }, { data: ratings }] = await Promise.all([
+      db.from("rides")
+        .select("*, driver:profiles!rides_driver_id_fkey(id, full_name, bio, verification_level, created_at), requests:ride_requests(*, passenger:profiles!ride_requests_passenger_id_fkey(id, full_name, verification_level))")
+        .order("departs_at"),
+      db.from("ride_requests").select("*").eq("passenger_id", state.user.id).in("status", ["pending", "accepted"]),
+      db.from("profile_ratings").select("*").eq("role", "driver"),
+    ]);
+
+    state.loading = false;
+    if (error) { toast(error.message, "error"); return renderResults(); }
+
+    const byDriver = Object.fromEntries((ratings || []).map((r) => [r.subject_id, r]));
+    state.rides = (rides || []).map((r) => ({ ...r, driverRating: byDriver[r.driver_id] }));
+    state.myRequests = mine || [];
     render();
   }
 
@@ -248,47 +931,259 @@
   document.addEventListener("click", async (e) => {
     const el = e.target.closest("[data-action]");
     if (!el || state.busy) return;
-    const { action } = el.dataset;
+    const { action, id } = el.dataset;
 
-    if (action === "google") {
-      state.busy = true;
-      const { error } = await db.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo: window.location.href.split("#")[0] },
-      });
-      state.busy = false;
-      if (error) toast(error.message, "error");
-    }
+    switch (action) {
+      case "google": {
+        state.busy = true;
+        const { error } = await db.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.href.split("#")[0] } });
+        state.busy = false;
+        if (error) toast(error.message, "error");
+        break;
+      }
 
-    if (action === "signout") {
-      await db.auth.signOut();
-      await loadSession();
-    }
+      case "signout":
+        await db.auth.signOut();
+        location.reload();
+        break;
 
-    if (action === "invite") {
-      state.busy = true;
-      const { data, error } = await db.rpc("create_invite");
-      state.busy = false;
-      if (error) return toast(error.message, "error");
-      await loadSession();
-      toast(`Code created: ${data}`);
-    }
+      case "nav":
+        state.view = el.dataset.view;
+        state.modal = null;
+        state.confirmDelete = null;
+        render();
+        window.scrollTo(0, 0);
+        break;
 
-    if (action === "delete") {
-      if (!confirm("Delete your account and all your data? This cannot be undone.")) return;
-      const { error } = await db.rpc("delete_my_account");
-      if (error) return toast(error.message, "error");
-      await db.auth.signOut();
-      await loadSession();
-      toast("Your account has been deleted.");
+      case "swap": {
+        const f = state.filters;
+        [f.from, f.to] = [f.to, f.from];
+        render();
+        break;
+      }
+
+      case "filter-vibe": {
+        const v = state.filters.vibes;
+        state.filters.vibes = v.includes(id) ? v.filter((x) => x !== id) : [...v, id];
+        $("#vibe-filters").innerHTML = vibeChips();
+        renderResults();
+        break;
+      }
+
+      case "clear-filters":
+        state.filters = { from: "", to: "", when: "any", vibes: [] };
+        render();
+        break;
+
+      case "step": {
+        const group = el.parentElement;
+        const min = +group.dataset.min, max = +group.dataset.max;
+        const obj = el.dataset.target === "join" ? state.modal : state.form;
+        obj.seats = Math.min(max, Math.max(min, obj.seats + Number(el.dataset.delta)));
+        group.querySelector("span").textContent = obj.seats;
+        const [dec, inc] = group.querySelectorAll("button");
+        dec.disabled = obj.seats <= min;
+        inc.disabled = obj.seats >= max;
+        break;
+      }
+
+      case "form-vibe": {
+        const v = state.form.vibes;
+        state.form.vibes = v.includes(id) ? v.filter((x) => x !== id) : [...v, id];
+        $("#form-vibes").innerHTML = formVibes();
+        refreshIcons();
+        break;
+      }
+
+      case "add-point":
+        readForm();
+        state.form.points.push("");
+        render();
+        break;
+
+      case "remove-point":
+        readForm();
+        state.form.points.splice(Number(id), 1);
+        render();
+        break;
+
+      case "open-join": {
+        const r = rideById(id);
+        state.modal = { type: "join", rideId: id, seats: 1, pickup: r.meeting_points[0] };
+        renderModal();
+        break;
+      }
+
+      case "open-profile": {
+        const { data: p } = await db.from("profiles").select("*").eq("id", id).maybeSingle();
+        const { data: rs } = await db.from("profile_ratings").select("*").eq("subject_id", id);
+        state.modal = {
+          type: "profile", person: p,
+          asDriver: (rs || []).find((r) => r.role === "driver"),
+          asPassenger: (rs || []).find((r) => r.role === "passenger"),
+        };
+        renderModal();
+        break;
+      }
+
+      case "close-modal":
+        state.modal = null;
+        renderModal();
+        break;
+
+      case "confirm-join": {
+        const m = state.modal;
+        const msg = $("#join-msg").value.trim();
+        if (MONEY.test(msg) || LINK.test(msg)) return;
+        state.busy = true;
+        const { error } = await db.rpc("request_seat", { p_ride: m.rideId, p_seats: m.seats, p_pickup: m.pickup, p_message: msg });
+        state.busy = false;
+        if (error) return toast(error.message, "error");
+        state.modal = null;
+        await loadRides();
+        toast("Request sent. The driver decides from here.");
+        break;
+      }
+
+      case "withdraw": {
+        state.busy = true;
+        const { error } = await db.rpc("cancel_request", { p_request: id });
+        state.busy = false;
+        if (error) return toast(error.message, "error");
+        await loadRides();
+        toast("Done. The seat is open again.");
+        break;
+      }
+
+      case "respond": {
+        const accept = el.dataset.accept === "1";
+        state.busy = true;
+        const { error } = await db.rpc("respond_request", { p_request: id, p_accept: accept });
+        state.busy = false;
+        if (error) return toast(error.message, "error");
+        await loadRides();
+        toast(accept ? "Accepted. They're riding with you." : "Request declined.");
+        break;
+      }
+
+      case "ask-delete":
+        state.confirmDelete = id;
+        render();
+        break;
+
+      case "cancel-delete":
+        state.confirmDelete = null;
+        render();
+        break;
+
+      case "delete-ride": {
+        state.busy = true;
+        const { error } = await db.from("rides").delete().eq("id", id);
+        state.busy = false;
+        state.confirmDelete = null;
+        if (error) return toast(error.message, "error");
+        await loadRides();
+        toast("Ride cancelled.");
+        break;
+      }
+
+      case "invite": {
+        state.busy = true;
+        const { data, error } = await db.rpc("create_invite");
+        state.busy = false;
+        if (error) return toast(error.message, "error");
+        const { data: inv } = await db.from("invites").select("*").order("created_at", { ascending: false });
+        state.invites = inv || [];
+        render();
+        toast(`Code created: ${data}`);
+        break;
+      }
+
+      case "report": {
+        const reason = prompt("What happened? Type one of: money, no_show, pickup_changed, unsafe, harassment, other");
+        if (!reason) return;
+        const { error } = await db.rpc("report", { p_reported: id, p_reason: reason.trim(), p_details: "", p_chat: null });
+        if (error) return toast(error.message, "error");
+        state.modal = null;
+        renderModal();
+        toast("Thank you. The Lifta team will look at this.");
+        break;
+      }
+
+      case "delete-account": {
+        if (!confirm("Delete your account and all your data? This cannot be undone.")) return;
+        const { error } = await db.rpc("delete_my_account");
+        if (error) return toast(error.message, "error");
+        await db.auth.signOut();
+        location.reload();
+        break;
+      }
     }
   });
+
+  // Keep the post form in state so a re-render doesn't lose what was typed.
+  function readForm() {
+    const g = (sel) => document.querySelector(sel);
+    if (g("#f-from")) state.form.from = g("#f-from").value;
+    if (g("#f-to")) state.form.to = g("#f-to").value;
+    if (g("#f-departs")) state.form.departs = g("#f-departs").value;
+    if (g("#f-note")) state.form.note = g("#f-note").value;
+    const pledge = document.querySelector('[data-field="pledge"]');
+    if (pledge) state.form.pledge = pledge.checked;
+    const pts = [...document.querySelectorAll("[data-point]")];
+    if (pts.length) state.form.points = pts.map((i) => i.value);
+  }
+
+  function onChange(e) {
+    const t = e.target;
+
+    if (t.dataset.filter) {
+      state.filters[t.dataset.filter] = t.value;
+      renderResults();
+    }
+
+    if (t.dataset.field) {
+      state.form[t.dataset.field] = t.type === "checkbox" ? t.checked : t.value;
+      if (t.dataset.field === "note") {
+        const bad = MONEY.test(t.value) || LINK.test(t.value);
+        const help = $("#note-help");
+        help.textContent = noteHelp();
+        help.className = `mt-1.5 text-sm ${bad ? "text-rose-700" : "text-slate-500"}`;
+        t.classList.toggle("inp-error", bad);
+      }
+    }
+
+    if (t.dataset.point !== undefined) state.form.points[Number(t.dataset.point)] = t.value;
+
+    if (t.hasAttribute?.("data-pickup") && state.modal) {
+      state.modal.pickup = t.value;
+      renderModal();
+    }
+
+    if (t.id === "join-msg") {
+      const bad = MONEY.test(t.value) || LINK.test(t.value);
+      const help = $("#join-help");
+      help.textContent = bad ? "Remove anything about money or links. Lifta rides are free." : "The driver sees this with your request.";
+      help.className = `mt-1.5 text-sm ${bad ? "text-rose-700" : "text-slate-500"}`;
+      t.classList.toggle("inp-error", bad);
+      $("#join-confirm").disabled = bad;
+    }
+
+    if (t.id === "p-bio") {
+      const bad = MONEY.test(t.value) || LINK.test(t.value);
+      const help = $("#bio-help");
+      help.textContent = bad ? "Remove anything about money or links." : `${t.value.length}/300. No money or links.`;
+      help.className = `mt-1.5 text-sm ${bad ? "text-rose-700" : "text-slate-500"}`;
+    }
+  }
+  document.addEventListener("input", onChange);
+  document.addEventListener("change", onChange);
 
   document.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (state.busy) return;
 
-    if (e.target.id === "join-form") {
+    if (e.target.id === "join-lifta") {
       const name = $("#j-name").value.trim();
       const code = $("#j-code").value.trim();
       if (name.length < 2) return toast("Add your name.", "error");
@@ -301,6 +1196,8 @@
       toast("Welcome to Lifta.");
     }
 
+    if (e.target.id === "ride-form") { readForm(); await submitRide(); }
+
     if (e.target.id === "bio-form") {
       const bio = $("#p-bio").value.trim();
       state.busy = true;
@@ -312,19 +1209,15 @@
     }
   });
 
-  // Live counter and money warning while typing the bio
-  document.addEventListener("input", (e) => {
-    if (e.target.id !== "p-bio") return;
-    const v = e.target.value;
-    const bad = /(€|\$|£|\beuros?\b|\bpay\w*|\bcash\b|\bfees?\b|\bprice\b|\bcosts?\b|revolut|paypal|\bswish\w*)/i.test(v);
-    const help = $("#bio-help");
-    help.textContent = bad ? "Remove anything about money. Lifta is free." : `${v.length}/300. No money or links.`;
-    help.className = `mt-1.5 text-sm ${bad ? "text-rose-700" : "text-slate-500"}`;
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && state.modal) { state.modal = null; renderModal(); }
   });
 
   /* ---------- Start ---------- */
-  db.auth.onAuthStateChange(() => loadSession());
+  db.auth.onAuthStateChange((evt) => { if (evt === "SIGNED_IN" || evt === "SIGNED_OUT") loadSession(); });
   loadSession();
+  // Rides vanish at departure, so refresh every few minutes to stay honest.
+  setInterval(() => { if (state.profile) loadRides(); }, 180000);
   </script>
 </body>
 </html>
