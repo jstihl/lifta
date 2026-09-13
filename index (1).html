@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lifta | Sign in</title>
+  <meta name="description" content="Community ridesharing for company, never for money." />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    if (window.tailwind) tailwind.config = {
+      theme: { extend: {
+        colors: { ink: "#102A3A", sun: "#FFC53D", paper: "#F4F7F5", road: "#2B4254" },
+        fontFamily: { display: ['"Bricolage Grotesque"', "Figtree", "sans-serif"], sans: ["Figtree", "system-ui", "sans-serif"] },
+      } },
+    };
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style type="text/tailwindcss">
+    @layer components {
+      .inp { @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base text-ink placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-teal-600; }
+      .label { @apply block text-sm font-semibold text-slate-700 mb-1.5; }
+      .btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 text-base font-semibold text-white transition-colors hover:bg-teal-800 disabled:opacity-40 disabled:cursor-not-allowed; }
+      .btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-5 py-3 text-base font-semibold hover:bg-slate-50; }
+      .card { @apply bg-white rounded-2xl border border-slate-200; }
+      .tag { @apply inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700; }
+    }
+  </style>
+
+  <style>
+    button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid #0F766E; outline-offset: 2px; }
+    /* The road motif: asphalt with a dashed centre line */
+    .road-v { width: 10px; border-radius: 999px;
+      background-color: #2B4254;
+      background-image: linear-gradient(to bottom, #FFC53D 0 55%, transparent 55% 100%);
+      background-size: 2px 10px; background-repeat: repeat-y; background-position: center top; }
+    .pop { animation: pop .18s ease-out both; }
+    @keyframes pop { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .pop { animation: none; } }
+  </style>
+</head>
+
+<body class="bg-paper text-ink font-sans antialiased min-h-screen">
+  <div id="app" class="min-h-screen"></div>
+  <div id="toasts" class="fixed z-50 bottom-6 inset-x-4 md:inset-x-auto md:right-6 flex flex-col gap-2 md:w-96" aria-live="polite"></div>
+
+  <script>
+  /* =====================================================================
+     Lifta: sign-in and profile, connected to Supabase.
+     Three states: signed out, signed in without a profile (needs an
+     invite code), signed in with a profile.
+     ===================================================================== */
+
+  const SUPABASE_URL = "https://nboyoauxhojfnvpamzna.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_6fFL45IwDGxTmdZKc698qw_mD4LUhpk";
+  const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  const icon = (n, c = "w-4 h-4") => `<i data-lucide="${n}" class="${c}" aria-hidden="true"></i>`;
+  const refreshIcons = () => window.lucide && window.lucide.createIcons();
+  const fmtDate = (d) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+
+  const state = { user: null, profile: null, invites: [], busy: false };
+
+  /* ---------- Notices ---------- */
+  function toast(text, tone = "ok") {
+    const el = document.createElement("div");
+    el.className = `pop flex items-start gap-3 rounded-xl px-4 py-3 text-sm font-medium shadow-lg ${tone === "error" ? "bg-rose-700 text-white" : "bg-ink text-white"}`;
+    el.innerHTML = `${icon(tone === "error" ? "triangle-alert" : "circle-check", "w-5 h-5 shrink-0")}<span>${esc(text)}</span>`;
+    $("#toasts").appendChild(el);
+    refreshIcons();
+    setTimeout(() => el.remove(), 5000);
+  }
+
+  /* ---------- Shared pieces ---------- */
+  const logo = `<span class="inline-flex items-center gap-2.5">
+    <span class="w-9 h-9 rounded-xl bg-ink grid place-items-center" aria-hidden="true"><span class="road-v" style="height:22px;width:8px"></span></span>
+    <span class="font-display text-2xl font-extrabold tracking-tight">Lifta</span></span>`;
+
+  // Permanent reminder of the core rule. Not dismissible by design.
+  const banner = `<div class="bg-sun text-ink" role="note">
+    <p class="max-w-4xl mx-auto px-4 py-2 flex items-center justify-center gap-2 text-sm font-semibold text-center">
+      ${icon("heart-handshake", "w-4 h-4 shrink-0")}
+      Lifta is always free. Never ask for or offer money. You share the ride for the company.
+    </p></div>`;
+
+  function avatar(name, size = "lg") {
+    const tones = ["bg-teal-100 text-teal-800","bg-amber-100 text-amber-900","bg-sky-100 text-sky-800","bg-rose-100 text-rose-800","bg-lime-100 text-lime-800"];
+    const tone = tones[[...name].reduce((s, c) => s + c.charCodeAt(0), 0) % tones.length];
+    const initials = name.split(" ").map((p) => p[0]).slice(0, 2).join("");
+    const sizes = { sm: "w-9 h-9 text-sm", lg: "w-20 h-20 text-2xl" };
+    return `<div aria-hidden="true" class="${sizes[size]} ${tone} rounded-full grid place-items-center font-display font-extrabold shrink-0">${esc(initials)}</div>`;
+  }
+
+  // The badge says exactly what has been checked, never more.
+  const LEVELS = {
+    email:  { label: "Email verified", icon: "mail" },
+    google: { label: "Email verified via Google", icon: "badge-check" },
+    phone:  { label: "Phone verified", icon: "phone" },
+    id:     { label: "ID verified", icon: "shield-check" },
+  };
+
+  /* ---------- 1. Signed out ---------- */
+  function viewSignedOut() {
+    return `${banner}
+    <div class="max-w-md mx-auto px-4 py-16">
+      <div class="text-center">${logo}</div>
+      <h1 class="mt-8 font-display text-4xl font-extrabold tracking-tight text-center leading-tight">Going somewhere? Take someone along.</h1>
+      <p class="mt-4 text-lg text-slate-600 text-center leading-relaxed">Drivers with empty seats meet people heading the same way. Nobody pays. Everybody gets company.</p>
+
+      <div class="card mt-10 p-6">
+        <button data-action="google" class="btn-primary w-full">${icon("log-in", "w-5 h-5")} Continue with Google</button>
+        <p class="mt-4 text-sm text-slate-500 text-center">Lifta is invite-only. You need a code from someone who is already a member.</p>
+      </div>
+
+      <ul class="mt-8 space-y-3 text-sm text-slate-600">
+        <li class="flex gap-3">${icon("user", "w-4 h-4 shrink-0 mt-0.5")} Real names. You always know who you are riding with.</li>
+        <li class="flex gap-3">${icon("ban", "w-4 h-4 shrink-0 mt-0.5")} No money, ever.</li>
+        <li class="flex gap-3">${icon("trash-2", "w-4 h-4 shrink-0 mt-0.5")} Rides are deleted once they depart. We keep nothing we don't need.</li>
+      </ul>
+    </div>`;
+  }
+
+  /* ---------- 2. Signed in, no profile yet ---------- */
+  function viewNeedsInvite() {
+    return `${banner}
+    <div class="max-w-md mx-auto px-4 py-16">
+      <div class="text-center">${logo}</div>
+      <h1 class="mt-8 font-display text-3xl font-extrabold tracking-tight text-center">Almost in</h1>
+      <p class="mt-3 text-slate-600 text-center">Signed in as ${esc(state.user.email)}. Add your invite code and your name.</p>
+
+      <form id="join-form" class="card mt-8 p-6 space-y-5">
+        <div>
+          <label for="j-name" class="label">Your name</label>
+          <input id="j-name" class="inp" placeholder="First Last" autocomplete="name"
+                 value="${esc(state.user.user_metadata?.full_name || "")}" />
+          <p class="mt-1.5 text-sm text-slate-500">Use your real name. Others see it when you drive or ride along.</p>
+        </div>
+        <div>
+          <label for="j-code" class="label">Invite code</label>
+          <input id="j-code" class="inp uppercase tracking-widest" placeholder="ABC1234XYZ" autocomplete="off" maxlength="10" />
+        </div>
+        <button type="submit" class="btn-primary w-full">Join Lifta</button>
+      </form>
+
+      <button data-action="signout" class="mt-6 w-full text-sm font-semibold text-slate-600 underline underline-offset-4">Sign out</button>
+    </div>`;
+  }
+
+  /* ---------- 3. Signed in, has a profile ---------- */
+  function viewProfile() {
+    const p = state.profile;
+    const lvl = LEVELS[p.verification_level] || LEVELS.email;
+    const unused = state.invites.filter((i) => !i.used_by && new Date(i.expires_at) > new Date());
+
+    return `${banner}
+    <header class="bg-white border-b border-slate-200">
+      <div class="max-w-2xl mx-auto px-4 h-16 flex items-center justify-between">
+        ${logo}
+        <button data-action="signout" class="text-sm font-semibold text-slate-600 hover:underline">Sign out</button>
+      </div>
+    </header>
+
+    <div class="max-w-2xl mx-auto px-4 py-8 space-y-6">
+      <section class="card p-6">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-5">
+          ${avatar(p.full_name)}
+          <div class="min-w-0">
+            <h1 class="font-display text-3xl font-extrabold tracking-tight">${esc(p.full_name)}</h1>
+            <div class="mt-2 flex flex-wrap items-center gap-3">
+              <span class="inline-flex items-center gap-1 text-xs font-semibold text-teal-800 bg-teal-50 rounded-full px-2 py-0.5">
+                ${icon(lvl.icon, "w-3.5 h-3.5")}${lvl.label}</span>
+              ${p.role === "admin" ? `<span class="tag">${icon("shield", "w-3.5 h-3.5")}Admin</span>` : ""}
+            </div>
+          </div>
+        </div>
+
+        <form id="bio-form" class="mt-6">
+          <label for="p-bio" class="label">A little about you</label>
+          <textarea id="p-bio" rows="3" maxlength="300" class="inp resize-none"
+            placeholder="What you do, where you usually drive, what you like to talk about.">${esc(p.bio)}</textarea>
+          <p id="bio-help" class="mt-1.5 text-sm text-slate-500">${p.bio.length}/300. No money or links.</p>
+          <button type="submit" class="btn-ghost mt-3">Save</button>
+        </form>
+
+        <dl class="mt-6 grid grid-cols-2 gap-4 border-t border-slate-100 pt-5">
+          <div><dt class="text-sm text-slate-500">Member since</dt>
+            <dd class="mt-1 font-semibold">${fmtDate(p.created_at)}</dd></div>
+          <div><dt class="text-sm text-slate-500">Invites left</dt>
+            <dd class="mt-1 font-semibold">${p.role === "admin" ? "Unlimited" : p.invites_left}</dd></div>
+        </dl>
+      </section>
+
+      <section class="card p-6">
+        <h2 class="font-display text-xl font-extrabold">Invite someone</h2>
+        <p class="mt-1 text-sm text-slate-600">You vouch for the people you invite. Only share with people you trust.</p>
+        ${unused.length ? `<ul class="mt-4 space-y-2">${unused.map((i) => `
+          <li class="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
+            <span class="font-mono font-semibold tracking-widest">${esc(i.code)}</span>
+            <span class="text-sm text-slate-500">Valid until ${fmtDate(i.expires_at)}</span>
+          </li>`).join("")}</ul>` : `<p class="mt-4 text-sm text-slate-500">No unused codes right now.</p>`}
+        <button data-action="invite" class="btn-ghost mt-4">${icon("plus")} Create a code</button>
+      </section>
+
+      <section class="card p-6">
+        <h2 class="font-display text-xl font-extrabold">Your account</h2>
+        <p class="mt-1 text-sm text-slate-600">${esc(state.user.email)}</p>
+        <button data-action="delete" class="mt-4 text-sm font-semibold text-rose-700 underline underline-offset-4">Delete my account and all my data</button>
+      </section>
+    </div>`;
+  }
+
+  /* ---------- Render ---------- */
+  function render() {
+    const app = $("#app");
+    if (!state.user) app.innerHTML = viewSignedOut();
+    else if (!state.profile) app.innerHTML = viewNeedsInvite();
+    else app.innerHTML = viewProfile();
+    refreshIcons();
+  }
+
+  /* ---------- Load the signed-in user's data ---------- */
+  async function loadSession() {
+    const { data: { session } } = await db.auth.getSession();
+    state.user = session?.user || null;
+    state.profile = null;
+    state.invites = [];
+
+    if (state.user) {
+      const { data: p } = await db.from("profiles").select("*").eq("id", state.user.id).maybeSingle();
+      state.profile = p || null;
+      if (p) {
+        const { data: inv } = await db.from("invites").select("*").order("created_at", { ascending: false });
+        state.invites = inv || [];
+      }
+    }
+    render();
+  }
+
+  /* ---------- Actions ---------- */
+  document.addEventListener("click", async (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el || state.busy) return;
+    const { action } = el.dataset;
+
+    if (action === "google") {
+      state.busy = true;
+      const { error } = await db.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: window.location.href.split("#")[0] },
+      });
+      state.busy = false;
+      if (error) toast(error.message, "error");
+    }
+
+    if (action === "signout") {
+      await db.auth.signOut();
+      await loadSession();
+    }
+
+    if (action === "invite") {
+      state.busy = true;
+      const { data, error } = await db.rpc("create_invite");
+      state.busy = false;
+      if (error) return toast(error.message, "error");
+      await loadSession();
+      toast(`Code created: ${data}`);
+    }
+
+    if (action === "delete") {
+      if (!confirm("Delete your account and all your data? This cannot be undone.")) return;
+      const { error } = await db.rpc("delete_my_account");
+      if (error) return toast(error.message, "error");
+      await db.auth.signOut();
+      await loadSession();
+      toast("Your account has been deleted.");
+    }
+  });
+
+  document.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (state.busy) return;
+
+    if (e.target.id === "join-form") {
+      const name = $("#j-name").value.trim();
+      const code = $("#j-code").value.trim();
+      if (name.length < 2) return toast("Add your name.", "error");
+      if (!code) return toast("Add your invite code.", "error");
+      state.busy = true;
+      const { error } = await db.rpc("redeem_invite", { invite_code: code, full_name: name });
+      state.busy = false;
+      if (error) return toast(error.message, "error");
+      await loadSession();
+      toast("Welcome to Lifta.");
+    }
+
+    if (e.target.id === "bio-form") {
+      const bio = $("#p-bio").value.trim();
+      state.busy = true;
+      const { error } = await db.from("profiles").update({ bio }).eq("id", state.user.id);
+      state.busy = false;
+      if (error) return toast(error.message, "error");
+      state.profile.bio = bio;
+      toast("Saved.");
+    }
+  });
+
+  // Live counter and money warning while typing the bio
+  document.addEventListener("input", (e) => {
+    if (e.target.id !== "p-bio") return;
+    const v = e.target.value;
+    const bad = /(€|\$|£|\beuros?\b|\bpay\w*|\bcash\b|\bfees?\b|\bprice\b|\bcosts?\b|revolut|paypal|\bswish\w*)/i.test(v);
+    const help = $("#bio-help");
+    help.textContent = bad ? "Remove anything about money. Lifta is free." : `${v.length}/300. No money or links.`;
+    help.className = `mt-1.5 text-sm ${bad ? "text-rose-700" : "text-slate-500"}`;
+  });
+
+  /* ---------- Start ---------- */
+  db.auth.onAuthStateChange(() => loadSession());
+  loadSession();
+  </script>
+</body>
+</html>
