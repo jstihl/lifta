@@ -129,11 +129,29 @@
   const fmtDuration = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`);
   const arrivalTime = (iso, mins) => formatTime(new Date(new Date(iso).getTime() + mins * 60000));
 
+  // Most of what gets sent on a trip is one of these. Tap, don't type.
+  const QUICK = [
+    "I'm on my way",
+    "I'm at the pickup spot",
+    "Running about 5 minutes late",
+    "I'm here, where are you?",
+    "See you tomorrow",
+  ];
+
+  const REPORT_REASONS = [
+    ["money", "Asked for money"],
+    ["no_show", "Didn't show up"],
+    ["pickup_changed", "Changed the agreed pickup"],
+    ["unsafe", "Unsafe driving or behaviour"],
+    ["harassment", "Harassment"],
+    ["other", "Something else"],
+  ];
+
   /* ---------- State ---------- */
   const state = {
     view: "find",
     user: null, profile: null,
-    cities: [], rides: [], myRequests: [], invites: [],
+    cities: [], rides: [], myRequests: [], invites: [], chats: [], messages: [],
     filters: { from: "", to: "", when: "any", vibes: [] },
     form: null,
     formErrors: {},
@@ -152,6 +170,15 @@
 
   const rideById = (id) => state.rides.find((r) => r.id === id);
   const requestFor = (rideId) => state.myRequests.find((q) => q.ride_id === rideId);
+  const chatById = (id) => state.chats.find((c) => c.id === id);
+  const chatForRide = (rideId) => state.chats.find((c) => c.ride_id === rideId && !c.closed_at);
+
+  // Who am I talking to in this chat?
+  const otherPerson = (c) => (c.driver_id === state.user.id ? c.passenger : c.driver);
+  const iAmDriver = (c) => c.driver_id === state.user.id;
+  const hasReviewed = (c) => (iAmDriver(c) ? c.driver_reviewed_at : c.passenger_reviewed_at);
+  const tripDone = (c) => new Date(c.departs_at).getTime() < Date.now();
+  const daysLeft = (c) => Math.max(0, Math.ceil((new Date(c.delete_at) - Date.now()) / 86400000));
 
   /* ---------- Notices ---------- */
   function toast(text, tone = "ok") {
@@ -263,9 +290,10 @@
         <button data-action="withdraw" data-id="${q.id}" class="text-sm font-semibold text-rose-700 underline underline-offset-4">Withdraw</button>
         <span class="pill bg-amber-100 text-amber-900">${icon("hourglass")} Request sent</span></div>`;
     } else if (q && q.status === "accepted") {
-      action = `<div class="flex items-center gap-3">
-        <button data-action="withdraw" data-id="${q.id}" class="text-sm font-semibold text-rose-700 underline underline-offset-4">Leave</button>
-        <span class="pill bg-teal-100 text-teal-900">${icon("circle-check")} You're in</span></div>`;
+      const c = chatForRide(r.id);
+      action = `<div class="flex items-center gap-2 flex-wrap">
+        <span class="pill bg-teal-100 text-teal-900">${icon("circle-check")} You're in</span>
+        ${c ? `<button data-action="open-messages" data-id="${c.id}" class="btn-ghost py-2">${icon("message-circle")} Messages</button>` : ""}</div>`;
     } else if (r.seats_left === 0) {
       action = `<span class="pill bg-slate-100 text-slate-500">Full</span>`;
     } else {
@@ -542,6 +570,9 @@
   function tripsView() {
     const driving = state.rides.filter((r) => r.driver_id === state.user.id);
     const riding = state.myRequests.map((q) => ({ ...q, ride: rideById(q.ride_id) })).filter((q) => q.ride);
+    // A trip is "done" once it has departed. The ride row is gone by then;
+    // the chat keeps its own frozen copy of the agreement.
+    const past = state.chats.filter(tripDone).sort((a, b) => new Date(b.departs_at) - new Date(a.departs_at));
 
     return `
     <div class="max-w-3xl mx-auto px-4 py-8 sm:py-12">
@@ -556,7 +587,32 @@
         <h2 class="font-display text-2xl font-extrabold mb-4">You're riding</h2>
         ${riding.length ? `<div class="space-y-4">${riding.map(ridingCard).join("")}</div>` : emptyBox("No ride requests yet. Find someone heading your way.", "Find a ride", "find")}
       </section>
+
+      ${past.length ? `<section class="mt-10">
+        <h2 class="font-display text-2xl font-extrabold mb-4">Done</h2>
+        <p class="-mt-2 mb-4 text-sm text-slate-600">The ride itself is gone. Your agreement and messages stay for 5 days after arrival, so you can sort anything out and leave a review.</p>
+        <ul class="card divide-y divide-slate-100">${past.map(pastRow).join("")}</ul>
+      </section>` : ""}
     </div>`;
+  }
+
+  // Built from chats, not rides: the ride is deleted the moment it departs.
+  function pastRow(c) {
+    const other = otherPerson(c) || {};
+    const reviewed = hasReviewed(c);
+    return `<li class="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div class="min-w-0">
+        ${routeInline(c.from_city, c.to_city)}
+        <p class="mt-1 text-sm text-slate-600">${formatDay(c.departs_at)} with ${esc(other.full_name || "a member")}</p>
+        <p class="mt-1 flex items-center gap-1.5 text-xs text-slate-500">${icon("trash-2", "w-3.5 h-3.5")} Deleted in ${plural(daysLeft(c), "day", "days")}</p>
+      </div>
+      <div class="flex items-center gap-2 shrink-0 flex-wrap">
+        <button data-action="open-messages" data-id="${c.id}" class="btn-ghost py-2">${icon("file-text")} Agreement</button>
+        ${reviewed
+          ? `<span class="text-sm text-slate-500">Reviewed</span>`
+          : `<button data-action="open-review" data-id="${c.id}" class="btn-primary">${icon("star")} Review</button>`}
+      </div>
+    </li>`;
   }
 
   const emptyBox = (text, cta, view) => `<div class="rounded-2xl border border-dashed border-slate-300 bg-white p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -599,8 +655,17 @@
         </div>`;
       }).join("")}
 
-      ${accepted.length ? `<p class="mt-4 flex items-center gap-2 text-sm font-semibold text-teal-800">
-        ${icon("users")} Riding with you: ${accepted.map((q) => esc(firstName(q.passenger?.full_name))).join(", ")}</p>` : ""}
+      ${accepted.length ? `<div class="mt-4 pt-4 border-t border-slate-100">
+        <p class="flex items-center gap-2 text-sm font-semibold text-teal-800">${icon("users")} Riding with you</p>
+        <ul class="mt-2 space-y-2">${accepted.map((q) => {
+          const c = state.chats.find((x) => x.request_id === q.id);
+          return `<li class="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+            <span class="flex items-center gap-2 min-w-0">${avatar(q.passenger?.full_name, "sm")}
+              <span class="min-w-0"><span class="block font-medium truncate">${esc(q.passenger?.full_name || "Member")}</span>
+              <span class="block text-sm text-slate-500 truncate">${esc(q.pickup)}</span></span></span>
+            ${c ? `<button data-action="open-messages" data-id="${c.id}" class="btn-ghost py-2 shrink-0">${icon("message-circle")} Messages</button>` : ""}
+          </li>`;
+        }).join("")}</ul></div>` : ""}
       ${!pending.length && !accepted.length ? `<p class="mt-4 text-sm text-slate-500">No requests yet. They show up here as soon as someone asks to join.</p>` : ""}
     </div>`;
   }
@@ -619,7 +684,10 @@
           : `<span class="pill bg-amber-100 text-amber-900">${icon("hourglass")} Waiting for ${esc(firstName(d.full_name))}</span>`}
       </div>
       <p class="mt-3 flex gap-2 text-sm text-slate-600">${icon("map-pin", "w-4 h-4 shrink-0 mt-0.5")} Pickup at ${esc(q.pickup)}</p>
-      <button data-action="withdraw" data-id="${q.id}" class="mt-4 text-sm font-semibold text-rose-700 underline underline-offset-4">${confirmed ? "Leave this ride" : "Withdraw request"}</button>
+      <div class="mt-4 flex items-center gap-4 flex-wrap">
+        ${confirmed && chatForRide(r.id) ? `<button data-action="open-messages" data-id="${chatForRide(r.id).id}" class="btn-ghost py-2">${icon("message-circle")} Messages</button>` : ""}
+        <button data-action="withdraw" data-id="${q.id}" class="text-sm font-semibold text-rose-700 underline underline-offset-4">${confirmed ? "Leave this ride" : "Withdraw request"}</button>
+      </div>
     </div>`;
   }
 
@@ -763,12 +831,140 @@
     `);
   }
 
+  /* ---------- Trip messages ----------
+     Not a chat in the usual sense: a message thread tied to one trip,
+     between the two people on it. It opens when a seat is confirmed and
+     is deleted 5 days after arrival. The agreement sits locked on top. */
+  function messagesModal(m) {
+    const c = chatById(m.chatId);
+    if (!c) return modalFrame("Trip messages", `<p class="text-slate-600">This trip is no longer available.</p>`);
+    const other = otherPerson(c) || {};
+    const closed = !!c.closed_at;
+    const done = tripDone(c);
+
+    const agreement = `<div class="rounded-xl bg-slate-50 border border-slate-200 p-4">
+      <p class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        ${icon("file-text", "w-3.5 h-3.5")} Agreement</p>
+      <div class="mt-2">${routeInline(c.from_city, c.to_city)}</div>
+      <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+        <div><dt class="text-slate-500">Departure</dt><dd class="font-medium">${formatDay(c.departs_at)} at ${formatTime(c.departs_at)}</dd></div>
+        <div><dt class="text-slate-500">Meeting point</dt><dd class="font-medium">${esc(c.pickup)}</dd></div>
+        <div><dt class="text-slate-500">Seats</dt><dd class="font-medium">${c.seats}</dd></div>
+        <div><dt class="text-slate-500">Agreed</dt><dd class="font-medium">${new Date(c.agreed_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</dd></div>
+      </dl>
+      <p class="mt-3 flex items-center gap-2 text-sm font-semibold text-teal-800">${icon("ban", "w-4 h-4")} This ride is free. No money changes hands.</p>
+    </div>`;
+
+    const thread = state.messages.length
+      ? state.messages.map((msg) => {
+          if (!msg.sender_id) return `<p class="text-center text-xs text-slate-500 bg-slate-100 rounded-full px-3 py-1.5 mx-auto max-w-sm">${esc(msg.body)}</p>`;
+          const mine = msg.sender_id === state.user.id;
+          return `<div class="flex ${mine ? "justify-end" : "justify-start"}">
+            <div class="max-w-[80%] rounded-2xl px-4 py-2.5 ${mine ? "bg-ink text-white rounded-br-sm" : "bg-slate-100 text-ink rounded-bl-sm"}">
+              <p class="text-sm leading-relaxed">${esc(msg.body)}</p>
+              <p class="mt-1 text-xs ${mine ? "text-slate-400" : "text-slate-500"}">${formatTime(msg.created_at)}</p>
+            </div></div>`;
+        }).join("")
+      : `<p class="text-center text-sm text-slate-500 py-4">No messages yet. The quick replies below cover most of it.</p>`;
+
+    return modalFrame(`Trip with ${firstName(other.full_name) || "a member"}`, `
+      ${agreement}
+
+      <div id="thread" class="mt-5 space-y-3 max-h-64 overflow-y-auto">${thread}</div>
+
+      ${closed
+        ? `<p class="mt-5 rounded-xl bg-slate-100 p-3 text-sm text-slate-600">These messages are closed. You can still read them until they are deleted.</p>`
+        : `<div class="mt-5">
+            <div class="flex flex-wrap gap-2">${QUICK.map((q) => `
+              <button data-action="quick" data-text="${esc(q)}" class="chip chip-off">${esc(q)}</button>`).join("")}</div>
+            <form id="msg-form" class="mt-3 flex gap-2">
+              <input id="msg-input" maxlength="500" class="inp" placeholder="Something else…" autocomplete="off" />
+              <button type="submit" class="btn-primary px-4 shrink-0" aria-label="Send">${icon("send", "w-4 h-4")}</button>
+            </form>
+            <p id="msg-help" class="mt-1.5 text-sm text-slate-500">No money and no links. Keep it to the trip.</p>
+          </div>`}
+
+      ${done && !hasReviewed(c)
+        ? `<div class="mt-5 rounded-xl border border-teal-200 bg-teal-50 p-4">
+            <p class="font-semibold">How was the trip with ${esc(firstName(other.full_name))}?</p>
+            <p class="mt-1 text-sm text-slate-600">Your review stays on their profile after this thread is gone.</p>
+            <button data-action="open-review" data-id="${c.id}" class="btn-primary mt-3">Leave a review</button>
+          </div>`
+        : done && hasReviewed(c) ? `<p class="mt-5 text-sm text-slate-500">You've reviewed this trip. Thank you.</p>` : ""}
+
+      <div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+        <p class="flex items-center gap-2 text-xs text-slate-500">
+          ${icon("trash-2", "w-3.5 h-3.5")} Deleted in ${plural(daysLeft(c), "day", "days")}, on ${new Date(c.delete_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</p>
+        <div class="flex gap-3">
+          <button data-action="open-report" data-id="${other.id}" data-chat="${c.id}" class="text-sm font-semibold text-rose-700 underline underline-offset-4">Report</button>
+          <button data-action="block" data-id="${other.id}" class="text-sm font-semibold text-rose-700 underline underline-offset-4">Block</button>
+        </div>
+      </div>`);
+  }
+
+  /* ---------- Review: short, and about the person, not the ride ---------- */
+  function reviewModal(m) {
+    const c = chatById(m.chatId);
+    if (!c) return "";
+    const other = otherPerson(c) || {};
+    const role = iAmDriver(c) ? "passenger" : "driver";
+    return modalFrame(`Review ${firstName(other.full_name)}`, `
+      <p class="text-slate-600">As a ${role} on ${esc(c.from_city)} to ${esc(c.to_city)}.</p>
+
+      <div class="mt-5 flex justify-center gap-1" role="group" aria-label="Rating">
+        ${[1,2,3,4,5].map((n) => `<button data-action="set-rating" data-id="${n}" class="p-1.5" aria-label="${n} ${n === 1 ? "star" : "stars"}">
+          ${icon("star", `w-9 h-9 ${n <= m.rating ? "fill-amber-400 text-amber-400" : "text-slate-300"}`)}</button>`).join("")}
+      </div>
+
+      <div class="mt-5">
+        <label for="rev-body" class="label">A line about the trip (optional)</label>
+        <textarea id="rev-body" rows="2" maxlength="150" class="inp resize-none" placeholder="Punctual, easy company, and we talked the whole way."></textarea>
+        <p id="rev-help" class="mt-1.5 text-sm text-slate-500">0/150. Keep it short and about the person.</p>
+      </div>
+
+      <div class="mt-6 flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
+        <button data-action="close-modal" class="btn-ghost">Not now</button>
+        <button id="rev-send" data-action="send-review" class="btn-primary" ${m.rating ? "" : "disabled"}>Submit review</button>
+      </div>`);
+  }
+
+  /* ---------- Report ---------- */
+  function reportModal(m) {
+    return modalFrame("Report a problem", `
+      <p class="text-slate-600">The Lifta team looks at every report. If this is about a trip, those messages are kept as a record until the case is closed.</p>
+
+      <div class="mt-5 space-y-2" role="group" aria-label="Reason">
+        ${REPORT_REASONS.map(([id, label]) => `
+          <label class="flex items-center gap-3 rounded-xl border px-4 py-3 cursor-pointer ${m.reason === id ? "border-teal-600 bg-teal-50" : "border-slate-300"}">
+            <input type="radio" name="reason" value="${id}" ${m.reason === id ? "checked" : ""} class="w-4 h-4 accent-teal-700" data-reason />
+            <span class="font-medium">${label}</span>
+          </label>`).join("")}
+      </div>
+
+      <div class="mt-5">
+        <label for="rep-details" class="label">What happened? (optional)</label>
+        <textarea id="rep-details" rows="3" maxlength="500" class="inp resize-none" placeholder="Anything that helps us understand."></textarea>
+      </div>
+
+      <div class="mt-6 flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
+        <button data-action="close-modal" class="btn-ghost">Cancel</button>
+        <button data-action="send-report" class="btn-primary" ${m.reason ? "" : "disabled"}>Send report</button>
+      </div>`);
+  }
+
   function renderModal() {
     const root = $("#modal-root");
     const m = state.modal;
-    root.innerHTML = !m ? "" : m.type === "join" ? joinModal(m) : profileModal(m);
+    root.innerHTML = !m ? ""
+      : m.type === "join" ? joinModal(m)
+      : m.type === "messages" ? messagesModal(m)
+      : m.type === "review" ? reviewModal(m)
+      : m.type === "report" ? reportModal(m)
+      : profileModal(m);
     document.body.style.overflow = m ? "hidden" : "";
     refreshIcons();
+    const thread = $("#thread");
+    if (thread) thread.scrollTop = thread.scrollHeight;
   }
 
   /* ---------- Shell ---------- */
@@ -924,7 +1120,39 @@
     const byDriver = Object.fromEntries((ratings || []).map((r) => [r.subject_id, r]));
     state.rides = (rides || []).map((r) => ({ ...r, driverRating: byDriver[r.driver_id] }));
     state.myRequests = mine || [];
+    await loadChats();
     render();
+  }
+
+  // Chats outlive their ride: the ride row is deleted at departure, but the
+  // chat holds its own copy of the agreement for 5 more days.
+  async function loadChats() {
+    const { data } = await db.from("chats")
+      .select("*, driver:profiles!chats_driver_id_fkey(id, full_name, verification_level), passenger:profiles!chats_passenger_id_fkey(id, full_name, verification_level)")
+      .order("departs_at", { ascending: false });
+    state.chats = data || [];
+  }
+
+  async function openMessages(chatId) {
+    state.modal = { type: "messages", chatId };
+    state.messages = [];
+    renderModal();
+    const { data } = await db.from("messages").select("*").eq("chat_id", chatId).order("created_at");
+    state.messages = data || [];
+    renderModal();
+  }
+
+  async function sendMessage(text) {
+    const body = (text || "").trim();
+    if (!body || !state.modal) return;
+    if (MONEY.test(body) || LINK.test(body)) return toast("No money and no links in trip messages.", "error");
+    state.busy = true;
+    const { error } = await db.from("messages").insert({ chat_id: state.modal.chatId, sender_id: state.user.id, body });
+    state.busy = false;
+    if (error) return toast(error.message, "error");
+    const { data } = await db.from("messages").select("*").eq("chat_id", state.modal.chatId).order("created_at");
+    state.messages = data || [];
+    renderModal();
   }
 
   /* ---------- Actions ---------- */
@@ -1099,14 +1327,74 @@
         break;
       }
 
-      case "report": {
-        const reason = prompt("What happened? Type one of: money, no_show, pickup_changed, unsafe, harassment, other");
-        if (!reason) return;
-        const { error } = await db.rpc("report", { p_reported: id, p_reason: reason.trim(), p_details: "", p_chat: null });
+      case "open-messages":
+        await openMessages(id);
+        break;
+
+      case "quick":
+        await sendMessage(el.dataset.text);
+        break;
+
+      case "open-review":
+        state.modal = { type: "review", chatId: id, rating: 0 };
+        renderModal();
+        break;
+
+      case "set-rating":
+        state.modal.rating = Number(id);
+        renderModal();
+        break;
+
+      case "send-review": {
+        const m = state.modal;
+        const body = $("#rev-body").value.trim();
+        if (!m.rating) return;
+        if (MONEY.test(body) || LINK.test(body)) return toast("Remove anything about money or links.", "error");
+        state.busy = true;
+        const { error } = await db.rpc("submit_review", { p_chat: m.chatId, p_rating: m.rating, p_body: body });
+        state.busy = false;
         if (error) return toast(error.message, "error");
         state.modal = null;
+        await loadChats();
+        render();
+        toast("Review saved. It stays on their profile.");
+        break;
+      }
+
+      case "open-report":
+        state.modal = { type: "report", personId: id, chatId: el.dataset.chat || null, reason: "" };
         renderModal();
+        break;
+
+      case "report":
+        state.modal = { type: "report", personId: id, chatId: null, reason: "" };
+        renderModal();
+        break;
+
+      case "send-report": {
+        const m = state.modal;
+        if (!m.reason) return;
+        const details = $("#rep-details")?.value.trim() || "";
+        state.busy = true;
+        const { error } = await db.rpc("report", { p_reported: m.personId, p_reason: m.reason, p_details: details, p_chat: m.chatId });
+        state.busy = false;
+        if (error) return toast(error.message, "error");
+        state.modal = null;
+        await loadChats();
+        render();
         toast("Thank you. The Lifta team will look at this.");
+        break;
+      }
+
+      case "block": {
+        if (!confirm("Block this person? Your shared trip messages close and you won't see each other's rides.")) return;
+        state.busy = true;
+        const { error } = await db.rpc("block_user", { p_user: id });
+        state.busy = false;
+        if (error) return toast(error.message, "error");
+        state.modal = null;
+        await loadRides();
+        toast("Blocked.");
         break;
       }
 
@@ -1169,6 +1457,26 @@
       $("#join-confirm").disabled = bad;
     }
 
+    if (t.hasAttribute?.("data-reason") && state.modal) {
+      state.modal.reason = t.value;
+      renderModal();
+    }
+
+    if (t.id === "msg-input") {
+      const bad = MONEY.test(t.value) || LINK.test(t.value);
+      const help = $("#msg-help");
+      help.textContent = bad ? "Remove anything about money or links. Lifta rides are free." : "No money and no links. Keep it to the trip.";
+      help.className = `mt-1.5 text-sm ${bad ? "text-rose-700" : "text-slate-500"}`;
+      t.classList.toggle("inp-error", bad);
+    }
+
+    if (t.id === "rev-body") {
+      const bad = MONEY.test(t.value) || LINK.test(t.value);
+      const help = $("#rev-help");
+      help.textContent = bad ? "Remove anything about money or links." : `${t.value.length}/150. Keep it short and about the person.`;
+      help.className = `mt-1.5 text-sm ${bad ? "text-rose-700" : "text-slate-500"}`;
+    }
+
     if (t.id === "p-bio") {
       const bad = MONEY.test(t.value) || LINK.test(t.value);
       const help = $("#bio-help");
@@ -1194,6 +1502,13 @@
       if (error) return toast(error.message, "error");
       await loadSession();
       toast("Welcome to Lifta.");
+    }
+
+    if (e.target.id === "msg-form") {
+      const input = $("#msg-input");
+      const body = input.value;
+      input.value = "";
+      await sendMessage(body);
     }
 
     if (e.target.id === "ride-form") { readForm(); await submitRide(); }
