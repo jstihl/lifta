@@ -839,6 +839,7 @@
         <h2 class="font-display text-xl font-extrabold">Your account</h2>
         <p class="mt-1 text-sm text-slate-600">${esc(state.user.email)}</p>
         <div class="mt-4 flex flex-wrap gap-4">
+          <button data-action="nav" data-view="legal" class="text-sm font-semibold text-slate-600 underline underline-offset-4">Terms and privacy</button>
           <button data-action="signout" class="text-sm font-semibold text-slate-600 underline underline-offset-4">Sign out</button>
           <button data-action="delete-account" class="text-sm font-semibold text-rose-700 underline underline-offset-4">Delete my account and all my data</button>
         </div>
@@ -1287,6 +1288,8 @@
       <div class="card mt-10 p-6">
         <button data-action="google" class="btn-primary w-full py-3 text-base">${icon("log-in", "w-5 h-5")} Continue with Google</button>
         <p class="mt-4 text-sm text-slate-500 text-center">Lifta is invite-only. You need a code from someone who is already a member.</p>
+        <p class="mt-3 text-sm text-slate-500 text-center">By joining you agree to the
+          <button data-action="nav" data-view="legal" class="font-semibold text-teal-800 underline underline-offset-4">terms and privacy notice</button>.</p>
       </div>
       <ul class="mt-8 space-y-3 text-sm text-slate-600">
         <li class="flex gap-3">${icon("user", "w-4 h-4 shrink-0 mt-0.5")} Real names. You always know who you are riding with.</li>
@@ -1312,6 +1315,9 @@
           <label for="j-code" class="label">Invite code</label>
           <input id="j-code" class="inp uppercase tracking-widest" placeholder="ABC1234XYZ" autocomplete="off" maxlength="10" />
         </div>
+        <p class="text-sm text-slate-600">By joining you agree to the
+          <button type="button" data-action="nav" data-view="legal" class="font-semibold text-teal-800 underline underline-offset-4">terms and privacy notice</button>,
+          including the rule that no money changes hands.</p>
         <button type="submit" class="btn-primary w-full py-3 text-base">Join Lifta</button>
       </form>
       <button data-action="signout" class="mt-6 w-full text-sm font-semibold text-slate-600 underline underline-offset-4">Sign out</button>
@@ -1351,11 +1357,120 @@
     </div>`;
   }
 
+  /* ---------- View: Terms and privacy ----------
+     Written to match what the app actually does. If a rule changes in the
+     database, it changes here too. Deliberately short: a document nobody
+     reads protects nobody. */
+  const CONTACT_EMAIL = "jasmin@steihle.com";
+
+  function legalView() {
+    const h2 = (t) => `<h2 class="font-display text-xl font-extrabold mt-8 mb-2">${t}</h2>`;
+    const p  = (t) => `<p class="mt-2 text-slate-700 leading-relaxed">${t}</p>`;
+    const li = (t) => `<li class="flex gap-3 text-slate-700 leading-relaxed">${icon("dot", "w-4 h-4 shrink-0 mt-1 text-slate-400")}<span>${t}</span></li>`;
+
+    return `
+    <div class="max-w-2xl mx-auto px-4 py-8 sm:py-12">
+      <h1 class="font-display text-4xl sm:text-5xl font-extrabold tracking-tight">Terms and privacy</h1>
+      <p class="mt-3 text-lg text-slate-600">What Lifta is, what we expect of you, and what we do with your data. Last updated ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}.</p>
+
+      <section class="card p-6 mt-8">
+        ${h2("What Lifta is")}
+        ${p("Lifta puts drivers with empty seats in touch with people going the same way. That is all it does. We do not arrange transport, we are not a taxi service, and we are not a party to your trip. What happens on the road is between the people in the car.")}
+
+        ${h2("No money. Ever.")}
+        ${p("This is the rule the whole thing rests on. You share a ride for the company, not for payment.")}
+        <ul class="mt-3 space-y-2">
+          ${li("Do not ask for money, fuel costs, favours or anything else in return for a ride.")}
+          ${li("Do not offer them either. A driver who accepts once will be asked every time.")}
+          ${li("Mentions of money and payment are blocked in ride notes, requests and trip messages.")}
+          ${li("Asking for payment gets an account removed. Report it if it happens to you.")}
+        </ul>
+
+        ${h2("Who can be here")}
+        <ul class="mt-3 space-y-2">
+          ${li("You must be 18 or older.")}
+          ${li("Lifta is invite-only. Someone already here vouched for you, and you vouch for anyone you invite.")}
+          ${li("Use your real name. Other people decide whether to get in a car with you based on it.")}
+          ${li("One account per person.")}
+        </ul>
+
+        ${h2("Meeting points")}
+        ${p("A meeting point is an area, not a pin. Naming a spot means an area roughly 200 metres across around it, and both of you are expected to wait inside that area. Nobody should have to walk half a kilometre looking for a car.")}
+        ${p("Use public places: a square, a marina, a church car park, a petrol station. Never a home address. The exact meeting point is only shown once a seat is confirmed.")}
+
+        ${h2("Driving")}
+        <ul class="mt-3 space-y-2">
+          ${li("If you drive, you need a valid licence, a roadworthy car and insurance that covers your passengers.")}
+          ${li("Count only seats with a working seatbelt.")}
+          ${li("Lifta does not check any of this. We cannot. That is one reason we are invite-only.")}
+        </ul>
+
+        ${h2("If something goes wrong")}
+        ${p("Report it from the person's profile or from your trip messages. A reported thread is kept until we have looked at it. Serious problems, and anything criminal, belong with the police, not with us.")}
+        ${p("You can block anyone. That closes any shared trip messages and hides you from each other.")}
+      </section>
+
+      <section class="card p-6 mt-6">
+        <h2 class="font-display text-2xl font-extrabold">Your data</h2>
+        ${p("The short version: we keep very little, and most of it deletes itself.")}
+
+        ${h2("What we hold")}
+        <ul class="mt-3 space-y-2">
+          ${li("Your name, your email address, and anything you write in your profile.")}
+          ${li("Rides you post, seats you request, and the messages on a trip.")}
+          ${li("Reviews you write and receive.")}
+          ${li("We do not track your location. We do not use advertising or analytics cookies. We do not sell anything to anyone, because there is nothing to sell.")}
+        </ul>
+
+        ${h2("How long")}
+        <ul class="mt-3 space-y-2">
+          ${li("<strong>A ride is deleted the moment it departs.</strong> It is used up, so it goes.")}
+          ${li("<strong>Trip messages and the agreement: 5 days after arrival.</strong> Long enough to sort out a disagreement, then gone.")}
+          ${li("<strong>A reported thread</strong> is kept until the case is closed, then 90 days.")}
+          ${li("<strong>Reviews</strong> stay on the profile they are about, until that account is deleted.")}
+          ${li("<strong>Unused invite codes</strong> expire after 14 days.")}
+        </ul>
+
+        ${h2("Deleting your account")}
+        ${p("There is a button on your profile. It removes your profile, your rides, your requests, your trip messages and the reviews you received.")}
+        ${p("Reviews you wrote about other people stay, with your name removed. They are information about those people, not about you, and removing them would punish someone else for your leaving.")}
+        ${p("If your account was suspended or had an open report against it when you deleted it, we keep one thing for 12 months: a one-way fingerprint of your email address. Not the address itself. It cannot be turned back into an address and it cannot identify you. It answers one question: whether an address trying to join is the same one that left under a cloud. You are shown a reference code when this happens. Keep it. It is the only way we can find your case if you think the block is wrong, because we hold no name and no address.")}
+        ${p("Someone who simply leaves is never blocked and is welcome back any time.")}
+
+        ${h2("Your rights")}
+        ${p(`Under the GDPR you can ask for a copy of your data, ask us to correct it, or ask us to delete it. Deletion is a button in the app. For anything else, write to <a href="mailto:${CONTACT_EMAIL}" class="font-semibold text-teal-800 underline underline-offset-4">${CONTACT_EMAIL}</a>. You can also complain to the Office of the Commissioner for Personal Data Protection in Cyprus.`)}
+
+        ${h2("Where it lives")}
+        ${p("Lifta runs on Supabase, with the database in Frankfurt, Germany. Your data stays in the EU. Signing in goes through Google, who tell us your name and email address and nothing else.")}
+      </section>
+
+      <section class="rounded-2xl bg-ink text-white p-6 mt-6">
+        <h2 class="font-display text-xl font-extrabold flex items-center gap-2">${icon("scale", "w-5 h-5 text-sun")} Being straight with you</h2>
+        <p class="mt-3 text-slate-200 leading-relaxed">Lifta is run by one person as a hobby project, with no income and no company behind it. We check nobody's licence, nobody's insurance and nobody's driving. What we do is keep the circle small, make everyone use their real name, and remove people who cause problems.</p>
+        <p class="mt-3 text-slate-200 leading-relaxed">Decide for yourself who you ride with. Tell someone where you are going. If a trip feels wrong, do not get in the car.</p>
+      </section>
+
+      <p class="mt-6 text-sm text-slate-500">Questions about any of this: <a href="mailto:${CONTACT_EMAIL}" class="font-semibold text-teal-800 underline underline-offset-4">${CONTACT_EMAIL}</a></p>
+    </div>`;
+  }
+
   /* ---------- Render ---------- */
   function render() {
     const app = $("#app");
     const farewell = sessionStorage.getItem("lifta-farewell");
     if (farewell && !state.user) { app.innerHTML = farewellView(JSON.parse(farewell)); refreshIcons(); return; }
+    // The terms have to be readable before you join, not only after.
+    if (state.view === "legal" && (!state.user || !state.profile)) {
+      app.innerHTML = `${banner}
+        <header class="bg-white border-b border-slate-200">
+          <div class="max-w-2xl mx-auto px-4 h-16 flex items-center justify-between">
+            ${logo}
+            <button data-action="nav" data-view="find" class="text-sm font-semibold text-slate-600 hover:underline">Back</button>
+          </div>
+        </header>${legalView()}`;
+      refreshIcons();
+      return;
+    }
     if (!state.user) { app.innerHTML = signedOutView(); }
     else if (!state.profile) { app.innerHTML = needsInviteView(); }
     else {
@@ -1363,6 +1478,7 @@
                     : state.view === "post" ? postView()
                     : state.view === "trips" ? tripsView()
                     : state.view === "admin" ? adminView()
+                    : state.view === "legal" ? legalView()
                     : profileView();
       app.innerHTML = shell(content);
       if (state.view === "find") { renderResults(); state.heroPlayed = true; }
