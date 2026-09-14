@@ -875,7 +875,7 @@
         <h2 class="font-display text-xl font-extrabold">Your account</h2>
         <p class="mt-1 text-sm text-slate-600">${esc(state.user.email)}</p>
         <div class="mt-4 flex flex-wrap gap-4">
-          <button data-action="nav" data-view="legal" class="text-sm font-semibold text-slate-600 underline underline-offset-4">Terms and privacy</button>
+          <button data-action="nav" data-view="legal" class="text-sm font-semibold text-slate-600 underline underline-offset-4">About, terms and privacy</button>
           <button data-action="signout" class="text-sm font-semibold text-slate-600 underline underline-offset-4">Sign out</button>
           <button data-action="delete-account" class="text-sm font-semibold text-rose-700 underline underline-offset-4">Delete my account and all my data</button>
         </div>
@@ -1352,6 +1352,9 @@
         <p class="mt-3 text-sm text-slate-500 text-center">By joining you agree to the
           <button data-action="nav" data-view="legal" class="font-semibold text-teal-800 underline underline-offset-4">terms and privacy notice</button>.</p>
       </div>
+      <p class="mt-6 text-center">
+        <button data-action="nav" data-view="legal" class="text-sm font-semibold text-slate-600 underline underline-offset-4">What is Lifta, and who runs it?</button>
+      </p>
       <ul class="mt-8 space-y-3 text-sm text-slate-600">
         <li class="flex gap-3">${icon("user", "w-4 h-4 shrink-0 mt-0.5")} Real names. You always know who you are riding with.</li>
         <li class="flex gap-3">${icon("ban", "w-4 h-4 shrink-0 mt-0.5")} No money, ever.</li>
@@ -1431,7 +1434,7 @@
 
     return `
     <div class="max-w-2xl mx-auto px-4 py-8 sm:py-12">
-      <h1 class="font-display text-4xl sm:text-5xl font-extrabold tracking-tight">Terms and privacy</h1>
+      <h1 class="font-display text-4xl sm:text-5xl font-extrabold tracking-tight">About, terms and privacy</h1>
       <p class="mt-3 text-lg text-slate-600">What Lifta is, what we expect of you, and what we do with your data. Last updated ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}.</p>
 
       <section class="card p-6 mt-8">
@@ -1503,6 +1506,14 @@
 
         ${h2("Where it lives")}
         ${p("Lifta runs on Supabase, with the database in Frankfurt, Germany. Your data stays in the EU. Signing in goes through Google, who tell us your name and email address and nothing else.")}
+      </section>
+
+      <section class="card p-6 mt-6">
+        <h2 class="font-display text-2xl font-extrabold">About Lifta</h2>
+        ${p("Most cars on this island have one person in them. Meanwhile someone else is making the same trip, alone, an hour later.")}
+        ${p("Lifta is for the drive, not the destination. You are going anyway. Someone else is going the same way. An hour of conversation costs neither of you anything, and both of you arrive having had a better trip than you would have had alone.")}
+        ${p("That is why no money changes hands. The moment someone pays, it becomes a service, and a service is something you complain about rather than someone you talk to.")}
+        ${p(`Lifta is built and run by Jasmin, one person in Cyprus, as a hobby project. There is no company behind it, no funding and no income. Nobody is trying to grow it into anything. If you want to say something about it, write to <a href="mailto:${CONTACT_EMAIL}" class="font-semibold text-teal-800 underline underline-offset-4">${CONTACT_EMAIL}</a>.`)}
       </section>
 
       <section class="rounded-2xl bg-ink text-white p-6 mt-6">
