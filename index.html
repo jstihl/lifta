@@ -1352,6 +1352,7 @@
     state.rides = (rides || []).map((r) => ({ ...r, driverRating: byDriver[r.driver_id] }));
     state.myRequests = mine || [];
     await Promise.all([loadChats(), loadRequesters()]);
+    startRealtime();
     render();
   }
 
@@ -1445,6 +1446,51 @@
         reviews: (rv || []).filter((x) => x.subject_id === id).map((x) => ({ ...x, authorName: x.author?.full_name })),
       };
     });
+  }
+
+  /* ---------- Realtime ----------
+     Someone standing at a meeting point should not have to reload the page.
+     Messages and seat requests arrive as they happen. Rides are not urgent,
+     so they stay on a timer. */
+  let channel = null;
+
+  function startRealtime() {
+    if (channel) return;
+    channel = db.channel("lifta")
+      // A message in one of my threads.
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async (payload) => {
+        const msg = payload.new;
+        const mine = state.chats.some((c) => c.id === msg.chat_id);
+        if (!mine) return;
+
+        // Keep the unread count honest even when the thread is closed.
+        const chat = chatById(msg.chat_id);
+        if (chat) chat.messages = [...(chat.messages || []), { id: msg.id, sender_id: msg.sender_id }];
+
+        if (state.modal?.type === "messages" && state.modal.chatId === msg.chat_id) {
+          state.messages = [...state.messages, msg];
+          markSeen(msg.chat_id, msg.id);
+          renderModal();
+        } else if (msg.sender_id && msg.sender_id !== state.user.id) {
+          const other = chat ? otherPerson(chat) : null;
+          toast(`New message from ${firstName(other?.full_name) || "your trip"}`, "ok");
+        }
+        render();
+      })
+      // Someone asks for a seat, or a driver answers mine.
+      .on("postgres_changes", { event: "*", schema: "public", table: "ride_requests" }, async (payload) => {
+        const row = payload.new || payload.old;
+        const onMyRide = state.rides.some((r) => r.id === row.ride_id && r.driver_id === state.user.id);
+        const isMine = row.passenger_id === state.user.id;
+        if (!onMyRide && !isMine) return;
+
+        await loadRides();
+        if (payload.eventType === "INSERT" && onMyRide) toast("Someone asked to join one of your rides.");
+        if (payload.eventType === "UPDATE" && isMine && payload.new.status === "accepted") {
+          toast("Your seat is confirmed.");
+        }
+      })
+      .subscribe();
   }
 
   /* ---------- Actions ---------- */
@@ -1906,8 +1952,11 @@
   /* ---------- Start ---------- */
   db.auth.onAuthStateChange((evt) => { if (evt === "SIGNED_IN" || evt === "SIGNED_OUT") loadSession(); });
   loadSession();
-  // Rides vanish at departure, so refresh every few minutes to stay honest.
-  setInterval(() => { if (state.profile) loadRides(); }, 180000);
+  // Messages and requests arrive live. Rides only need a periodic check,
+  // mostly so departed ones disappear on their own.
+  setInterval(() => {
+    if (state.profile && document.visibilityState === "visible" && !state.modal) loadRides();
+  }, 60000);
   </script>
 </body>
 </html>
