@@ -172,6 +172,11 @@
   ];
 
   /* ---------- State ---------- */
+  // Every column the browser is allowed to read from profiles. email_hash is
+  // deliberately absent: it is the rejoin fingerprint, and only the database's
+  // own functions may touch it. Asking for "*" would be refused outright.
+  const PROFILE_COLS = "id, full_name, bio, avatar_url, verification_level, phone_verified_at, invited_by, can_invite, invites_left, role, status, created_at";
+
   const state = {
     view: "find",
     user: null, profile: null,
@@ -1370,7 +1375,14 @@
     state.profile = null;
     if (!state.user) { state.loading = false; return render(); }
 
-    const { data: p } = await db.from("profiles").select("*").eq("id", state.user.id).maybeSingle();
+    const { data: p, error: pErr } = await db.from("profiles").select(PROFILE_COLS).eq("id", state.user.id).maybeSingle();
+    if (pErr) {
+      // A failed lookup is not the same as "no account". Say so, rather than
+      // sending an existing member back to the invite screen.
+      state.loading = false;
+      toast("Could not load your profile. Check your connection and reload.", "error");
+      return render();
+    }
     state.profile = p || null;
     if (!p) { state.loading = false; return render(); }
 
@@ -1446,7 +1458,7 @@
   async function loadAdmin() {
     const [{ data: reports }, { data: members }, { data: words }, { data: blocks }] = await Promise.all([
       db.from("reports").select("*").order("created_at", { ascending: false }),
-      db.from("profiles").select("*").order("created_at"),
+      db.from("profiles").select(PROFILE_COLS).order("created_at"),
       db.from("blocked_words").select("*").order("word"),
       db.rpc("admin_list_blocks"),
     ]);
@@ -1721,7 +1733,7 @@
         break;
 
       case "open-profile": {
-        const { data: p } = await db.from("profiles").select("*").eq("id", id).maybeSingle();
+        const { data: p } = await db.from("profiles").select(PROFILE_COLS).eq("id", id).maybeSingle();
         const { data: rs } = await db.from("profile_ratings").select("*").eq("subject_id", id);
         state.modal = {
           type: "profile", person: p, reviews: null,
