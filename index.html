@@ -168,6 +168,7 @@
     ["pickup_changed", "Changed the agreed pickup"],
     ["unsafe", "Unsafe driving or behaviour"],
     ["harassment", "Harassment"],
+    ["parcel", "Asked me to carry something"],
     ["other", "Something else"],
   ];
 
@@ -1393,7 +1394,8 @@
   const BLOCK_REASONS = {
     money: "Asking for money", no_show: "Not showing up",
     pickup_changed: "Changing the agreed pickup", unsafe: "Unsafe driving or behaviour",
-    harassment: "Harassment", other: "A reported problem",
+    harassment: "Harassment", parcel: "Asking someone to carry something",
+    other: "A reported problem",
     suspended: "Your account was suspended",
   };
 
@@ -1468,6 +1470,13 @@
           ${li("Count only seats with a working seatbelt.")}
           ${li("Lifta does not check any of this. We cannot. That is one reason we are invite-only.")}
         </ul>
+        ${p("Your passengers' own luggage is fine; that is what the bags tag is for. Carrying something for a person who is not in the car is not. If someone asks you to drop a parcel somewhere, say no. You do not have to explain why, and you can report it.")}
+
+        ${h2("Where Lifta's part ends")}
+        ${p("Lifta introduces people going the same way. That is all it does.")}
+        ${p("Do not use Lifta for anything illegal. Do not arrange a trip in order to move drugs, contraband, or goods for someone who is not in the car. Accounts that do are removed.")}
+        ${p("Once you meet, what happens between the meeting point and the destination is between the people in the car. We are not there. We are not a party to it, we do not endorse it, and we carry no responsibility for it. That is not us looking away; it is simply the truth of what this is.")}
+        ${p("Anything criminal belongs with the police, not with us.")}
 
         ${h2("If something goes wrong")}
         ${p("Report it from the person's profile or from your trip messages. A reported thread is kept until we have looked at it. Serious problems, and anything criminal, belong with the police, not with us.")}
