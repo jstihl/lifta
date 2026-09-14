@@ -181,7 +181,7 @@
     // user has to make, keyed by profile id.
     people: {},
     showAllReviews: {},
-    admin: { reports: [], members: [], words: [], people: {}, readingChat: null, chatMessages: [] },
+    admin: { reports: [], members: [], words: [], blocks: [], people: {}, readingChat: null, chatMessages: [] },
     filters: { from: "", to: "", when: "any", vibes: [] },
     form: null,
     formErrors: {},
@@ -938,6 +938,23 @@
         </form>
       </section>
 
+      <section class="card p-5">
+        <h2 class="font-display text-xl font-extrabold">Rejoin blocks</h2>
+        <p class="mt-1 text-sm text-slate-600">Accounts deleted while suspended or reported. We keep no name and no address, only a one-way fingerprint of the email, so a block can be recognised but never traced back to a person.</p>
+        ${a.blocks.length ? `<ul class="mt-4 divide-y divide-slate-100">${a.blocks.map((b) => `
+          <li class="py-3 flex flex-wrap items-center justify-between gap-3">
+            <div class="min-w-0">
+              <p class="font-mono font-semibold tracking-widest">${esc(b.reference)}</p>
+              <p class="mt-0.5 text-sm text-slate-600">${esc(BLOCK_REASONS[b.reason] || b.reason)}
+                · blocked ${new Date(b.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                · lapses ${new Date(b.expires_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p>
+            </div>
+            <button data-action="lift-block" data-id="${esc(b.reference)}" class="btn-ghost py-2 shrink-0">Lift</button>
+          </li>`).join("")}</ul>`
+          : `<p class="mt-4 text-sm text-slate-500">No active blocks.</p>`}
+        <p class="mt-4 text-sm text-slate-600">A blocked person is shown their reference when their account is deleted, and again if they try to rejoin. Ask for it before lifting anything: it is the only way to match a person to a case.</p>
+      </section>
+
       <section class="rounded-2xl bg-ink text-white p-6">
         <h2 class="font-display text-xl font-extrabold flex items-center gap-2">${icon("eye", "w-5 h-5 text-sun")} What you can and cannot see</h2>
         <ul class="mt-4 space-y-3 text-slate-200 leading-relaxed text-sm">
@@ -1293,9 +1310,44 @@
     </div>`;
   }
 
+  // Shown once, to someone whose deleted account carried a block. It is the
+  // only time they see the reference, so it is a page and not a toast.
+  const BLOCK_REASONS = {
+    money: "Asking for money", no_show: "Not showing up",
+    pickup_changed: "Changing the agreed pickup", unsafe: "Unsafe driving or behaviour",
+    harassment: "Harassment", other: "A reported problem",
+    suspended: "Your account was suspended",
+  };
+
+  function farewellView(b) {
+    const until = new Date(b.expires_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+    return `${banner}
+    <div class="max-w-md mx-auto px-4 py-16">
+      <div class="text-center">${logo}</div>
+      <h1 class="mt-8 font-display text-3xl font-extrabold tracking-tight text-center">Your account is deleted</h1>
+      <p class="mt-3 text-slate-600 text-center">Everything we held about you is gone.</p>
+
+      <div class="card mt-8 p-6 border-amber-300 bg-amber-50">
+        <p class="flex items-center gap-2 font-semibold">${icon("triangle-alert", "w-5 h-5")} You cannot rejoin until ${until}</p>
+        <p class="mt-2 text-sm text-slate-700">Reason: ${esc(BLOCK_REASONS[b.reason] || "A reported problem")}.</p>
+
+        <div class="mt-5 rounded-xl bg-white border border-amber-200 p-4 text-center">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Your reference</p>
+          <p class="mt-1 font-mono text-2xl font-bold tracking-widest">${esc(b.reference)}</p>
+        </div>
+
+        <p class="mt-4 text-sm text-slate-700">Write this down. If you think the block is wrong, contact the Lifta team and give them this reference. We keep no name and no address, so we cannot find your case without it.</p>
+      </div>
+
+      <button data-action="dismiss-farewell" class="mt-6 w-full text-sm font-semibold text-slate-600 underline underline-offset-4">Close</button>
+    </div>`;
+  }
+
   /* ---------- Render ---------- */
   function render() {
     const app = $("#app");
+    const farewell = sessionStorage.getItem("lifta-farewell");
+    if (farewell && !state.user) { app.innerHTML = farewellView(JSON.parse(farewell)); refreshIcons(); return; }
     if (!state.user) { app.innerHTML = signedOutView(); }
     else if (!state.profile) { app.innerHTML = needsInviteView(); }
     else {
@@ -1392,14 +1444,16 @@
   // Admin data. The database decides what comes back: a non-admin gets
   // only their own reports, and no member list beyond what anyone sees.
   async function loadAdmin() {
-    const [{ data: reports }, { data: members }, { data: words }] = await Promise.all([
+    const [{ data: reports }, { data: members }, { data: words }, { data: blocks }] = await Promise.all([
       db.from("reports").select("*").order("created_at", { ascending: false }),
       db.from("profiles").select("*").order("created_at"),
       db.from("blocked_words").select("*").order("word"),
+      db.rpc("admin_list_blocks"),
     ]);
     state.admin.reports = reports || [];
     state.admin.members = members || [];
     state.admin.words = words || [];
+    state.admin.blocks = blocks || [];
     state.admin.people = Object.fromEntries((members || []).map((p) => [p.id, p]));
   }
 
@@ -1574,6 +1628,18 @@
         break;
       }
 
+      case "lift-block": {
+        if (!confirm(`Lift block ${id}? That address can join Lifta again.`)) return;
+        state.busy = true;
+        const { error } = await db.rpc("admin_lift_block", { p_reference: id });
+        state.busy = false;
+        if (error) return toast(error.message, "error");
+        await loadAdmin();
+        render();
+        toast("Block lifted.");
+        break;
+      }
+
       case "admin-unword": {
         state.busy = true;
         const { error } = await db.from("blocked_words").delete().eq("word", id);
@@ -1642,6 +1708,11 @@
         renderModal();
         break;
       }
+
+      case "dismiss-farewell":
+        sessionStorage.removeItem("lifta-farewell");
+        render();
+        break;
 
       case "toggle-reviews":
         state.showAllReviews[id] = !state.showAllReviews[id];
@@ -1809,9 +1880,14 @@
 
       case "delete-account": {
         if (!confirm("Delete your account and all your data? This cannot be undone.")) return;
-        const { error } = await db.rpc("delete_my_account");
+        const { data, error } = await db.rpc("delete_my_account");
         if (error) return toast(error.message, "error");
         await db.auth.signOut();
+        // A block only exists if they left suspended or under an open report.
+        // Show it once, in full, with the reference they will need.
+        if (data) {
+          sessionStorage.setItem("lifta-farewell", JSON.stringify(data));
+        }
         location.reload();
         break;
       }
