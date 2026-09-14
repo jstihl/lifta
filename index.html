@@ -187,6 +187,8 @@
     // user has to make, keyed by profile id.
     people: {},
     showAllReviews: {},
+    shared: null,      // a trip someone shared with us, via ?t=
+    shareLinks: {},    // chat id -> link we created
     admin: { reports: [], members: [], words: [], blocks: [], usage: null, people: {}, readingChat: null, chatMessages: [] },
     filters: { from: "", to: "", when: "any", vibes: [] },
     form: null,
@@ -1197,6 +1199,22 @@
           </div>`
         : done && hasReviewed(c) ? `<p class="mt-5 text-sm text-slate-500">You've reviewed this trip. Thank you.</p>` : ""}
 
+      ${!done ? `<div class="mt-5 rounded-xl border border-slate-200 p-4">
+        <p class="flex items-center gap-2 font-semibold">${icon("shield-check", "w-4 h-4 text-teal-700")} Tell someone where you are going</p>
+        <p class="mt-1 text-sm text-slate-600">Send a link to a friend or someone at home. They see who you are with, the route and when you should arrive. No account needed, and they see nothing else.</p>
+        ${state.shareLinks[c.id]
+          ? `<div class="mt-3">
+              <input readonly value="${esc(location.origin + location.pathname + "?t=" + state.shareLinks[c.id])}"
+                class="inp text-sm" onclick="this.select()" aria-label="Link to share" />
+              <div class="mt-2 flex flex-wrap gap-3">
+                <button data-action="copy-share" data-id="${c.id}" class="btn-ghost py-2">${icon("copy")} Copy link</button>
+                <button data-action="revoke-share" data-id="${c.id}" class="text-sm font-semibold text-rose-700 underline underline-offset-4">Stop sharing</button>
+              </div>
+              <p class="mt-2 text-xs text-slate-500">The link stops working 12 hours after departure.</p>
+            </div>`
+          : `<button data-action="share-trip" data-id="${c.id}" class="btn-ghost py-2 mt-3">${icon("share-2")} Create a link</button>`}
+      </div>` : ""}
+
       <div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
         <p class="flex items-center gap-2 text-xs text-slate-500">
           ${icon("trash-2", "w-3.5 h-3.5")} Deleted in ${plural(daysLeft(c), "day", "days")}, on ${new Date(c.delete_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</p>
@@ -1535,9 +1553,66 @@
     </div>`;
   }
 
+  /* ---------- The page a friend sees ----------
+     No account, no sign-in, nothing to click. First names, the route and
+     the times. Enough for someone to know where you are and who you are
+     with, and not enough to find either of you. */
+  function sharedTripView(t) {
+    const arrives = t.arrives_about ? formatTime(t.arrives_about) : null;
+    return `${banner}
+    <div class="max-w-md mx-auto px-4 py-12">
+      <div class="text-center">${logo}</div>
+      <h1 class="mt-8 font-display text-3xl font-extrabold tracking-tight text-center">
+        ${esc(t.shared_by)} is sharing a ride</h1>
+      <p class="mt-3 text-slate-600 text-center">They wanted you to know where they are going and who with.</p>
+
+      <div class="card mt-8 p-6">
+        <div class="flex gap-3">
+          <div class="flex flex-col items-center pt-1.5 pb-1" aria-hidden="true">
+            <span class="w-3.5 h-3.5 rounded-full border-4 border-teal-600 bg-white"></span>
+            <span class="road-v flex-1 my-1.5"></span>
+            ${icon("map-pin", "w-5 h-5 text-ink fill-sun")}
+          </div>
+          <div class="flex-1 flex flex-col justify-between gap-4 min-w-0">
+            <div>
+              <p class="font-display text-2xl font-extrabold leading-tight truncate">${esc(t.from_city)}</p>
+              <p class="text-sm text-slate-500">${formatDay(t.departs_at)}, leaves ${formatTime(t.departs_at)}</p>
+              <p class="text-sm text-slate-500">From ${esc(t.pickup)}</p>
+            </div>
+            <div>
+              <p class="font-display text-2xl font-extrabold leading-tight truncate">${esc(t.to_city)}</p>
+              ${arrives ? `<p class="text-sm text-slate-500">Expected around ${arrives}</p>` : ""}
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6 pt-5 border-t border-slate-100">
+          <p class="text-sm text-slate-500">Who is in the car</p>
+          <div class="mt-2 flex items-center gap-4">
+            <span class="flex items-center gap-2">${avatar(t.driver, "sm")}
+              <span><span class="block font-semibold">${esc(t.driver)}</span>
+              <span class="block text-sm text-slate-500">driving</span></span></span>
+            <span class="flex items-center gap-2">${avatar(t.passenger, "sm")}
+              <span><span class="block font-semibold">${esc(t.passenger)}</span>
+              <span class="block text-sm text-slate-500">riding along</span></span></span>
+          </div>
+        </div>
+      </div>
+
+      <p class="mt-6 text-sm text-slate-600 leading-relaxed">If you do not hear from ${esc(t.shared_by)} after the expected arrival, call them. This page will not tell you anything more, and it stops working once the trip is over.</p>
+
+      <div class="mt-8 rounded-2xl bg-ink text-white p-5">
+        <p class="font-display text-lg font-extrabold">What is Lifta?</p>
+        <p class="mt-2 text-slate-200 leading-relaxed text-sm">People going the same way share the drive, for the company. Nobody pays, and nobody is charged. It is invite-only.</p>
+      </div>
+    </div>`;
+  }
+
   /* ---------- Render ---------- */
   function render() {
     const app = $("#app");
+    // Someone opened a shared link. That page is all they get.
+    if (state.shared) { app.innerHTML = sharedTripView(state.shared); refreshIcons(); return; }
     const farewell = sessionStorage.getItem("lifta-farewell");
     if (farewell && !state.user) { app.innerHTML = farewellView(JSON.parse(farewell)); refreshIcons(); return; }
     // The terms have to be readable before you join, not only after.
@@ -1571,6 +1646,15 @@
 
   /* ---------- Data ---------- */
   async function loadSession() {
+    // A shared link is answered before we care who is signed in.
+    const token = new URLSearchParams(location.search).get("t");
+    if (token) {
+      const { data } = await db.rpc("view_shared_trip", { p_token: token });
+      if (data) { state.shared = data; state.loading = false; return render(); }
+      state.loading = false;
+      toast("That link has expired or is no longer valid.", "error");
+    }
+
     const { data: { session } } = await db.auth.getSession();
     state.user = session?.user || null;
     state.profile = null;
@@ -1634,7 +1718,11 @@
     state.modal = { type: "messages", chatId };
     state.messages = [];
     renderModal();
-    const { data } = await db.from("messages").select("*").eq("chat_id", chatId).order("created_at");
+    const [{ data }, { data: shares }] = await Promise.all([
+      db.from("messages").select("*").eq("chat_id", chatId).order("created_at"),
+      db.from("trip_shares").select("token").eq("chat_id", chatId).is("revoked_at", null).gt("expires_at", new Date().toISOString()),
+    ]);
+    if (shares && shares.length) state.shareLinks[chatId] = shares[0].token;
     state.messages = data || [];
     if (state.messages.length) markSeen(chatId, state.messages[state.messages.length - 1].id);
     renderModal();
@@ -2029,6 +2117,34 @@
       case "quick":
         await sendMessage(el.dataset.text);
         break;
+
+      case "share-trip": {
+        state.busy = true;
+        const { data, error } = await db.rpc("share_trip", { p_chat: id });
+        state.busy = false;
+        if (error) return toast(error.message, "error");
+        state.shareLinks[id] = data;
+        renderModal();
+        break;
+      }
+
+      case "copy-share": {
+        const url = location.origin + location.pathname + "?t=" + state.shareLinks[id];
+        try { await navigator.clipboard.writeText(url); toast("Link copied. Send it to someone you trust."); }
+        catch { toast("Select the link and copy it manually.", "error"); }
+        break;
+      }
+
+      case "revoke-share": {
+        state.busy = true;
+        const { error } = await db.rpc("revoke_trip_share", { p_token: state.shareLinks[id] });
+        state.busy = false;
+        if (error) return toast(error.message, "error");
+        delete state.shareLinks[id];
+        renderModal();
+        toast("That link no longer works.");
+        break;
+      }
 
       case "open-review":
         state.modal = { type: "review", chatId: id, rating: 0 };
