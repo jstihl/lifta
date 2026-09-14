@@ -95,17 +95,30 @@
 
   // Mirrors public.contains_money in the database, so people are warned
   // as they type instead of being rejected after they press send.
-  const MONEY = new RegExp(
-    "(€|\\$|£|\\beuros?\\b|\\beuron?\\b|\\bdollars?\\b|\\bpounds?\\b|\\bcents?\\b|\\bkr\\b|\\bkronor\\b|\\blira\\b"
-    + "|\\bmoney\\b|\\bmonies\\b|\\bcash\\b|\\bfunds?\\b"
-    + "|\\bpay\\b|\\bpays\\b|\\bpaying\\b|\\bpaid\\b|\\bpayment\\w*|\\brepay\\w*|\\bprepay\\w*"
-    + "|\\bfees?\\b|\\bprices?\\b|\\bcosts?\\b|\\bcharge[sd]?\\b|\\brates?\\b|\\btolls?\\b|\\bbills?\\b|\\bexpenses?\\b"
-    + "|\\bchip in\\b|\\bchips in\\b|\\bcontribut\\w*|\\bsplit the\\b|\\bgo halves\\b|\\bhalf the\\b|\\bshare the (cost|fuel|petrol|gas|fare)\\b"
-    + "|\\b(fuel|petrol|gas|diesel|benzin|bensin)\\s*(money|cost|costs|cash|contribution|share)\\b"
-    + "|\\b(money|cash|something|anything)\\s+(for|towards|toward)\\s+(the\\s+)?(fuel|petrol|gas|diesel|ride|trip|drive|lift)\\b"
-    + "|\\brevolut\\b|\\bpaypal\\b|\\bswish\\w*|\\bvenmo\\b|\\bzelle\\b|\\bwise\\b|\\bbank transfer\\b|\\biban\\b|\\bcrypto\\b|\\bbitcoin\\b"
-    + "|\\btips?\\b|\\btipping\\b|\\bcompensat\\w*|\\breimburs\\w*|\\brefund\\w*|\\bdonation\\w*|\\bdonate\\w*"
-    + "|ευρώ|ευρω|λεφτά|λεφτα|χρήματα|χρηματα|πληρ|μετρητ)", "i");
+  const MONEY = (() => {
+    // Mirrors public.contains_money in the database: strip the phrases that
+    // state the rule ("no money", "this ride is free") before looking for
+    // anything to block, so saying the right thing is never punished.
+    const CLEAR = new RegExp(
+      "\\b(no|zero|without|never|nobody|no one|none|dont|don't|do not|doesn't|does not|won't|will not|not)\\b"
+      + "(\\s+\\w+){0,3}?\\s*\\b(money|monies|cash|payment|payments|paying|pay|pays|paid|charge|charges|cost|costs|fee|fees|price|prices)\\b"
+      + "|\\b(free of charge|for free|totally free|completely free|no charge|at no cost|costs nothing|free ride|rides are free|ride is free|this ride is free|always free)\\b"
+      + "|\\b(money|payment|cash)\\s+(is|are)\\s+not\\b", "gi");
+    const HIT = new RegExp(
+      "(€|\\$|£|\\beuros?\\b|\\beuron?\\b|\\bdollars?\\b|\\bpounds?\\b|\\bcents?\\b|\\bkr\\b|\\bkronor\\b|\\blira\\b"
+      + "|\\bmoney\\b|\\bmonies\\b|\\bcash\\b|\\bfunds?\\b"
+      + "|\\bpay\\w*|\\bpaid\\b|\\brepay\\w*|\\bprepay\\w*"
+      + "|\\bcosts?\\b|\\bcosting\\b|\\bcharges?\\b|\\bcharged\\b|\\bcharging\\b"
+      + "|\\bfees?\\b|\\bprices?\\b|\\bpricing\\b|\\brates?\\b|\\btolls?\\b|\\bbills?\\b|\\bexpenses?\\b|\\bfares?\\b"
+      + "|\\bhow much\\b|\\bhur mycket\\b"
+      + "|\\bchip in\\b|\\bchips in\\b|\\bcontribut\\w*|\\bsplit the\\b|\\bgo halves\\b|\\bhalf the\\b|\\bshare the (cost|fuel|petrol|gas|fare)\\b"
+      + "|\\b(fuel|petrol|gas|diesel|benzin|bensin)\\s*(money|cost|costs|cash|contribution|share)\\b"
+      + "|\\b(money|cash|something|anything)\\s+(for|towards|toward)\\s+(the\\s+)?(fuel|petrol|gas|diesel|ride|trip|drive|lift)\\b"
+      + "|\\brevolut\\b|\\bpaypal\\b|\\bswish\\w*|\\bvenmo\\b|\\bzelle\\b|\\bwise\\b|\\bbank transfer\\b|\\biban\\b|\\bcrypto\\b|\\bbitcoin\\b"
+      + "|\\btips?\\b|\\btipping\\b|\\bcompensat\\w*|\\breimburs\\w*|\\brefund\\w*|\\bdonation\\w*|\\bdonate\\w*"
+      + "|ευρώ|ευρω|λεφτά|λεφτα|χρήματα|χρηματα|πληρ|μετρητ)", "i");
+    return { test: (t) => HIT.test(String(t || "").replace(CLEAR, " ")) };
+  })();
   const LINK  = /(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|net|org|cy|se|eu|io|ly|me|app|info|link)\b)/i;
 
   const VIBES = [
@@ -163,6 +176,7 @@
     view: "find",
     user: null, profile: null,
     cities: [], rides: [], myRequests: [], invites: [], chats: [], messages: [],
+    myReviews: [], myRatings: { driver: null, passenger: null },
     admin: { reports: [], members: [], words: [], people: {}, readingChat: null, chatMessages: [] },
     filters: { from: "", to: "", when: "any", vibes: [] },
     form: null,
@@ -191,6 +205,27 @@
   const hasReviewed = (c) => (iAmDriver(c) ? c.driver_reviewed_at : c.passenger_reviewed_at);
   const tripDone = (c) => new Date(c.departs_at).getTime() < Date.now();
   const daysLeft = (c) => Math.max(0, Math.ceil((new Date(c.delete_at) - Date.now()) / 86400000));
+
+  // Messages button, with a count when something is waiting to be read.
+  function messagesButton(c, extra = "") {
+    const n = unreadIn(c);
+    return `<button data-action="open-messages" data-id="${c.id}" class="btn-ghost py-2 ${extra}">
+      ${icon("message-circle")} Messages
+      ${n ? `<span class="ml-1 h-5 min-w-5 px-1.5 rounded-full bg-sun text-ink text-xs font-bold grid place-items-center">${n}</span>` : ""}
+    </button>`;
+  }
+
+  // Unread tracking. The last message id you have seen per chat is kept in
+  // this browser only, so it never becomes data Lifta has to store about you.
+  const SEEN_KEY = "lifta-seen";
+  const readSeen = () => { try { return JSON.parse(localStorage.getItem(SEEN_KEY)) || {}; } catch { return {}; } };
+  const writeSeen = (o) => { try { localStorage.setItem(SEEN_KEY, JSON.stringify(o)); } catch {} };
+  const markSeen = (chatId, lastId) => { const s = readSeen(); s[chatId] = lastId; writeSeen(s); };
+  const unreadIn = (c) => {
+    const seen = readSeen()[c.id] || 0;
+    return (c.messages || []).filter((m) => m.id > seen && m.sender_id && m.sender_id !== state.user.id).length;
+  };
+  const unreadTotal = () => state.chats.reduce((n, c) => n + unreadIn(c), 0);
 
   /* ---------- Notices ---------- */
   function toast(text, tone = "ok") {
@@ -305,7 +340,7 @@
       const c = chatForRide(r.id);
       action = `<div class="flex items-center gap-2 flex-wrap">
         <span class="pill bg-teal-100 text-teal-900">${icon("circle-check")} You're in</span>
-        ${c ? `<button data-action="open-messages" data-id="${c.id}" class="btn-ghost py-2">${icon("message-circle")} Messages</button>` : ""}</div>`;
+        ${c ? messagesButton(c) : ""}</div>`;
     } else if (r.seats_left === 0) {
       action = `<span class="pill bg-slate-100 text-slate-500">Full</span>`;
     } else {
@@ -619,7 +654,9 @@
         <p class="mt-1 flex items-center gap-1.5 text-xs text-slate-500">${icon("trash-2", "w-3.5 h-3.5")} Deleted in ${plural(daysLeft(c), "day", "days")}</p>
       </div>
       <div class="flex items-center gap-2 shrink-0 flex-wrap">
-        <button data-action="open-messages" data-id="${c.id}" class="btn-ghost py-2">${icon("file-text")} Agreement</button>
+        <button data-action="open-messages" data-id="${c.id}" class="btn-ghost py-2">${icon("file-text")} Agreement
+          ${unreadIn(c) ? `<span class="ml-1 h-5 min-w-5 px-1.5 rounded-full bg-sun text-ink text-xs font-bold grid place-items-center">${unreadIn(c)}</span>` : ""}
+        </button>
         ${reviewed
           ? `<span class="text-sm text-slate-500">Reviewed</span>`
           : `<button data-action="open-review" data-id="${c.id}" class="btn-primary">${icon("star")} Review</button>`}
@@ -675,7 +712,7 @@
             <span class="flex items-center gap-2 min-w-0">${avatar(q.passenger?.full_name, "sm")}
               <span class="min-w-0"><span class="block font-medium truncate">${esc(q.passenger?.full_name || "Member")}</span>
               <span class="block text-sm text-slate-500 truncate">${esc(q.pickup)}</span></span></span>
-            ${c ? `<button data-action="open-messages" data-id="${c.id}" class="btn-ghost py-2 shrink-0">${icon("message-circle")} Messages</button>` : ""}
+            ${c ? messagesButton(c, "shrink-0") : ""}
           </li>`;
         }).join("")}</ul></div>` : ""}
       ${!pending.length && !accepted.length ? `<p class="mt-4 text-sm text-slate-500">No requests yet. They show up here as soon as someone asks to join.</p>` : ""}
@@ -697,7 +734,7 @@
       </div>
       <p class="mt-3 flex gap-2 text-sm text-slate-600">${icon("map-pin", "w-4 h-4 shrink-0 mt-0.5")} Pickup at ${esc(q.pickup)}</p>
       <div class="mt-4 flex items-center gap-4 flex-wrap">
-        ${confirmed && chatForRide(r.id) ? `<button data-action="open-messages" data-id="${chatForRide(r.id).id}" class="btn-ghost py-2">${icon("message-circle")} Messages</button>` : ""}
+        ${confirmed && chatForRide(r.id) ? messagesButton(chatForRide(r.id)) : ""}
         <button data-action="withdraw" data-id="${q.id}" class="text-sm font-semibold text-rose-700 underline underline-offset-4">${confirmed ? "Leave this ride" : "Withdraw request"}</button>
       </div>
     </div>`;
@@ -735,6 +772,14 @@
           <div><dt class="text-sm text-slate-500">Invites left</dt>
             <dd class="mt-1 font-semibold">${p.role === "admin" ? "Unlimited" : p.invites_left}</dd></div>
         </dl>
+      </section>
+
+      <section class="card p-6">
+        <h2 class="font-display text-xl font-extrabold">Your standing</h2>
+        <p class="mt-1 text-sm text-slate-600">People rate you separately for driving and for riding along.</p>
+        <div class="mt-4">${bothRatings(state.myRatings.driver, state.myRatings.passenger)}</div>
+        <h3 class="mt-6 font-display text-lg font-extrabold">What people say about you</h3>
+        ${reviewList(state.myReviews)}
       </section>
 
       <section class="card p-6">
@@ -879,6 +924,34 @@
     </div>`;
   }
 
+  // Reviews belong to the person, as a driver or as a passenger. The text is
+  // the point: a number alone says almost nothing.
+  function reviewList(list) {
+    if (!list || !list.length) return `<p class="mt-3 text-sm text-slate-500">No reviews yet.</p>`;
+    return `<ul class="mt-3 divide-y divide-slate-100">${list.map((r) => `
+      <li class="py-3">
+        <div class="flex items-center justify-between gap-3">
+          <span class="text-sm min-w-0">
+            <span class="font-semibold">${esc(r.authorName || "A former member")}</span>
+            <span class="text-slate-500"> on the trip, as ${r.role === "driver" ? "the driver" : "a passenger"}</span>
+          </span>
+          <span class="flex shrink-0" aria-label="${r.rating} out of 5">${[1,2,3,4,5].map((s) =>
+            icon("star", `w-3.5 h-3.5 ${s <= r.rating ? "fill-amber-400 text-amber-400" : "text-slate-300"}`)).join("")}</span>
+        </div>
+        ${r.body ? `<p class="mt-1 text-sm text-slate-700 leading-relaxed">${esc(r.body)}</p>` : ""}
+        <p class="mt-1 text-xs text-slate-500">${new Date(r.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p>
+      </li>`).join("")}</ul>`;
+  }
+
+  // Both scores side by side. Being a good passenger is not the same skill
+  // as being a good driver, so they never get merged into one number.
+  function bothRatings(asDriver, asPassenger) {
+    return `<dl class="grid grid-cols-2 gap-3">
+      <div class="rounded-xl bg-slate-50 p-3"><dt class="text-sm text-slate-500">As a driver</dt><dd class="mt-1">${rating(asDriver)}</dd></div>
+      <div class="rounded-xl bg-slate-50 p-3"><dt class="text-sm text-slate-500">As a passenger</dt><dd class="mt-1">${rating(asPassenger)}</dd></div>
+    </dl>`;
+  }
+
   /* ---------- Modals ---------- */
   function modalFrame(title, body) {
     return `<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="modal-title">
@@ -942,13 +1015,12 @@
           <p class="text-sm text-slate-600">Member since ${new Date(p.created_at).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</p>
         </div>
       </div>
-      <dl class="mt-5 grid grid-cols-2 gap-3">
-        <div class="rounded-xl bg-slate-50 p-3"><dt class="text-sm text-slate-500">As a driver</dt><dd class="mt-1">${rating(m.asDriver)}</dd></div>
-        <div class="rounded-xl bg-slate-50 p-3"><dt class="text-sm text-slate-500">As a passenger</dt><dd class="mt-1">${rating(m.asPassenger)}</dd></div>
-      </dl>
+      <div class="mt-5">${bothRatings(m.asDriver, m.asPassenger)}</div>
       ${p.bio ? `<p class="mt-5 text-slate-700 leading-relaxed">${esc(p.bio)}</p>` : ""}
       ${upcoming ? `<p class="mt-3 text-sm font-semibold text-teal-800">${plural(upcoming, "upcoming ride", "upcoming rides")} on Lifta</p>` : ""}
-      ${p.id !== state.user.id ? `<button data-action="report" data-id="${p.id}" class="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-rose-700 underline underline-offset-4">${icon("flag")} Report this person</button>` : ""}
+      <h3 class="mt-6 font-display text-lg font-extrabold">What people say</h3>
+      ${m.reviews ? reviewList(m.reviews) : `<p class="mt-3 text-sm text-slate-500">${icon("loader-circle", "spin w-4 h-4 inline")} Loading…</p>`}
+      ${p.id !== state.user.id ? `<button data-action="open-report" data-id="${p.id}" class="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-rose-700 underline underline-offset-4">${icon("flag")} Report this person</button>` : ""}
     `);
   }
 
@@ -1111,9 +1183,12 @@
     </p></div>`;
 
   function shell(content) {
+    // One badge, two things that need you: requests waiting for an answer,
+    // and messages you haven't read.
     const pendingCount = state.rides
       .filter((r) => r.driver_id === state.user.id)
-      .reduce((n, r) => n + (r.requests || []).filter((q) => q.status === "pending").length, 0);
+      .reduce((n, r) => n + (r.requests || []).filter((q) => q.status === "pending").length, 0)
+      + unreadTotal();
 
     return `
     <div class="sticky top-0 z-40">
@@ -1254,7 +1329,7 @@
   // chat holds its own copy of the agreement for 5 more days.
   async function loadChats() {
     const { data } = await db.from("chats")
-      .select("*, driver:profiles!chats_driver_id_fkey(id, full_name, verification_level), passenger:profiles!chats_passenger_id_fkey(id, full_name, verification_level)")
+      .select("*, driver:profiles!chats_driver_id_fkey(id, full_name, verification_level), passenger:profiles!chats_passenger_id_fkey(id, full_name, verification_level), messages(id, sender_id)")
       .order("departs_at", { ascending: false });
     state.chats = data || [];
   }
@@ -1265,7 +1340,9 @@
     renderModal();
     const { data } = await db.from("messages").select("*").eq("chat_id", chatId).order("created_at");
     state.messages = data || [];
+    if (state.messages.length) markSeen(chatId, state.messages[state.messages.length - 1].id);
     renderModal();
+    render();
   }
 
   async function sendMessage(text) {
@@ -1293,6 +1370,28 @@
     state.admin.members = members || [];
     state.admin.words = words || [];
     state.admin.people = Object.fromEntries((members || []).map((p) => [p.id, p]));
+  }
+
+  // Reviews with the author's name attached, so a review reads like a person
+  // said it rather than appearing from nowhere.
+  async function fetchReviews(personId) {
+    const { data } = await db.from("reviews")
+      .select("*, author:profiles!reviews_author_id_fkey(full_name)")
+      .eq("subject_id", personId)
+      .order("created_at", { ascending: false });
+    return (data || []).map((r) => ({ ...r, authorName: r.author?.full_name }));
+  }
+
+  async function loadMyReviews() {
+    const [reviews, { data: rs }] = await Promise.all([
+      fetchReviews(state.user.id),
+      db.from("profile_ratings").select("*").eq("subject_id", state.user.id),
+    ]);
+    state.myReviews = reviews;
+    state.myRatings = {
+      driver: (rs || []).find((r) => r.role === "driver"),
+      passenger: (rs || []).find((r) => r.role === "passenger"),
+    };
   }
 
   /* ---------- Actions ---------- */
@@ -1324,6 +1423,7 @@
           state.admin.chatMessages = [];
           await loadAdmin();
         }
+        if (state.view === "profile") await loadMyReviews();
         render();
         window.scrollTo(0, 0);
         break;
@@ -1448,10 +1548,12 @@
         const { data: p } = await db.from("profiles").select("*").eq("id", id).maybeSingle();
         const { data: rs } = await db.from("profile_ratings").select("*").eq("subject_id", id);
         state.modal = {
-          type: "profile", person: p,
+          type: "profile", person: p, reviews: null,
           asDriver: (rs || []).find((r) => r.role === "driver"),
           asPassenger: (rs || []).find((r) => r.role === "passenger"),
         };
+        renderModal();
+        state.modal.reviews = await fetchReviews(id);
         renderModal();
         break;
       }
