@@ -186,7 +186,7 @@
     // user has to make, keyed by profile id.
     people: {},
     showAllReviews: {},
-    admin: { reports: [], members: [], words: [], blocks: [], people: {}, readingChat: null, chatMessages: [] },
+    admin: { reports: [], members: [], words: [], blocks: [], usage: null, people: {}, readingChat: null, chatMessages: [] },
     filters: { from: "", to: "", when: "any", vibes: [] },
     form: null,
     formErrors: {},
@@ -645,11 +645,47 @@
         ${riding.length ? `<div class="space-y-4">${riding.map(ridingCard).join("")}</div>` : emptyBox("No ride requests yet. Find someone heading your way.", "Find a ride", "find")}
       </section>
 
-      ${past.length ? `<section class="mt-10">
-        <h2 class="font-display text-2xl font-extrabold mb-4">Done</h2>
-        <p class="-mt-2 mb-4 text-sm text-slate-600">The ride itself is gone. Your agreement and messages stay for 5 days after arrival, so you can sort anything out and leave a review.</p>
-        <ul class="card divide-y divide-slate-100">${past.map(pastRow).join("")}</ul>
+      ${past.length ? `<p class="mt-10 text-sm text-slate-600">
+        ${plural(past.length, "finished trip", "finished trips")} in your
+        <button data-action="nav" data-view="archive" class="font-semibold text-teal-800 underline underline-offset-4">archive</button>.</p>` : ""}
+    </div>`;
+  }
+
+  /* ---------- View: Archive ----------
+     Finished trips. The ride itself is gone; what is left is the agreement,
+     the messages and the chance to leave a review, for 5 days after arrival.
+     Private to the two people who were on the trip. Not visible to anyone
+     else, and not to an admin unless the thread has been reported. */
+  function archiveView() {
+    const done = state.chats.filter(tripDone).sort((a, b) => new Date(b.departs_at) - new Date(a.departs_at));
+    const needs = done.filter((c) => !hasReviewed(c) || unreadIn(c));
+    const rest  = done.filter((c) => hasReviewed(c) && !unreadIn(c));
+
+    return `
+    <div class="max-w-3xl mx-auto px-4 py-8 sm:py-12">
+      <h1 class="font-display text-4xl sm:text-5xl font-extrabold tracking-tight">Archive</h1>
+      <p class="mt-3 max-w-xl text-lg text-slate-600">Trips that have happened. The agreement and the messages stay for 5 days after arrival, then they are deleted. Only you and the other person can see any of this.</p>
+
+      ${!done.length ? `<div class="mt-8 rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
+          ${icon("archive", "w-10 h-10 mx-auto text-slate-400")}
+          <p class="mt-3 font-semibold text-lg">Nothing here yet.</p>
+          <p class="mt-1 text-slate-600">A trip lands here once it has departed.</p>
+        </div>` : ""}
+
+      ${needs.length ? `<section class="mt-8">
+        <h2 class="font-display text-2xl font-extrabold mb-1">Needs you</h2>
+        <p class="mb-4 text-sm text-slate-600">A review to leave, or something the other person wrote.</p>
+        <ul class="card divide-y divide-slate-100">${needs.map(pastRow).join("")}</ul>
       </section>` : ""}
+
+      ${rest.length ? `<section class="mt-8">
+        <h2 class="font-display text-2xl font-extrabold mb-4">Nothing outstanding</h2>
+        <ul class="card divide-y divide-slate-100">${rest.map(pastRow).join("")}</ul>
+      </section>` : ""}
+
+      ${done.length ? `<p class="mt-6 flex items-start gap-2 text-sm text-slate-500">
+        ${icon("trash-2", "w-4 h-4 shrink-0 mt-0.5")}
+        <span>Five days after a trip arrives, its agreement and messages are deleted for good. Reviews stay on the profile they are about.</span></p>` : ""}
     </div>`;
   }
 
@@ -910,6 +946,25 @@
         <h1 class="font-display text-4xl sm:text-5xl font-extrabold tracking-tight">Admin</h1>
         <p class="mt-3 text-lg text-slate-600">Reports first. Everything else is housekeeping.</p>
       </div>
+
+      ${a.usage ? `<section class="card p-5">
+        <h2 class="font-display text-xl font-extrabold">Is it being used?</h2>
+        <p class="mt-1 text-sm text-slate-600">Counts only. No names, no routes, no record of who rode with whom.</p>
+        <dl class="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-4">
+          ${[["Members", a.usage.members],
+             ["Rides coming up", a.usage.rides_upcoming],
+             ["Seats offered", a.usage.seats_offered],
+             ["Trips shared, last 5 days", a.usage.trips_shared_recent],
+             ["Seats booked ahead", a.usage.trips_booked_ahead],
+             ["Requests waiting", a.usage.requests_pending],
+             ["Reviews written", a.usage.reviews_total],
+             ["Open reports", a.usage.reports_open],
+             ["Active blocks", a.usage.blocks_active]].map(([label, n]) => `
+            <div><dt class="text-sm text-slate-500">${label}</dt>
+              <dd class="mt-0.5 font-display text-2xl font-extrabold">${n}</dd></div>`).join("")}
+        </dl>
+        <p class="mt-4 text-sm text-slate-500">Trips shared covers the last five days, because that is how long a trip exists before it deletes itself. Nothing is kept in order to produce these numbers.</p>
+      </section>` : ""}
 
       <section class="card">
         <div class="p-5 pb-0 flex items-center justify-between gap-3">
@@ -1221,6 +1276,7 @@
     { id: "find",    label: "Find a ride", icon: "search" },
     { id: "post",    label: "Post a ride", icon: "plus" },
     { id: "trips",   label: "My trips",    icon: "route" },
+    { id: "archive", label: "Archive",     icon: "archive" },
     { id: "profile", label: "Profile",     icon: "user" },
   ];
   // Admin is a fifth tab, and only admins ever see it.
@@ -1239,12 +1295,17 @@
     </p></div>`;
 
   function shell(content) {
-    // One badge, two things that need you: requests waiting for an answer,
-    // and messages you haven't read.
-    const pendingCount = state.rides
+    // Two badges, each counting only what that tab can do something about.
+    // My trips: requests waiting for an answer, and unread messages on a
+    // trip that has not happened yet.
+    const tripsCount = state.rides
       .filter((r) => r.driver_id === state.user.id)
       .reduce((n, r) => n + (r.requests || []).filter((q) => q.status === "pending").length, 0)
-      + unreadTotal();
+      + state.chats.filter((c) => !tripDone(c)).reduce((n, c) => n + unreadIn(c), 0);
+    // Archive: a review still to leave, or something written after the trip.
+    const archiveCount = state.chats.filter(tripDone)
+      .reduce((n, c) => n + unreadIn(c) + (hasReviewed(c) ? 0 : 1), 0);
+    const badgeFor = (id) => (id === "trips" ? tripsCount : id === "archive" ? archiveCount : 0);
 
     return `
     <div class="sticky top-0 z-40">
@@ -1256,7 +1317,7 @@
             ${navItems().map((n) => `<button data-action="nav" data-view="${n.id}" ${state.view === n.id ? 'aria-current="page"' : ""}
               class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${state.view === n.id ? "bg-ink text-white" : "text-slate-600 hover:bg-slate-100"}">
               ${icon(n.icon)}${n.label}
-              ${n.id === "trips" && pendingCount ? `<span class="ml-0.5 h-5 px-1.5 rounded-full bg-sun text-ink text-xs font-bold grid place-items-center">${pendingCount}</span>` : ""}
+              ${badgeFor(n.id) ? `<span class="ml-0.5 h-5 px-1.5 rounded-full bg-sun text-ink text-xs font-bold grid place-items-center">${badgeFor(n.id)}</span>` : ""}
             </button>`).join("")}
           </nav>
         </div>
@@ -1272,7 +1333,7 @@
           class="relative flex flex-col items-center gap-1 pt-3 pb-4 text-xs font-semibold ${active ? "text-teal-800" : "text-slate-500"}">
           ${active ? '<span class="absolute top-0 inset-x-6 h-1 rounded-b-full bg-teal-700" aria-hidden="true"></span>' : ""}
           <span class="relative">${icon(n.icon, "w-5 h-5")}
-            ${n.id === "trips" && pendingCount ? `<span class="absolute -top-1.5 -right-2.5 w-4 h-4 rounded-full bg-sun text-ink font-bold grid place-items-center" style="font-size:10px">${pendingCount}</span>` : ""}
+            ${badgeFor(n.id) ? `<span class="absolute -top-1.5 -right-2.5 w-4 h-4 rounded-full bg-sun text-ink font-bold grid place-items-center" style="font-size:10px">${badgeFor(n.id)}</span>` : ""}
           </span>${n.label}</button>`;
       }).join("")}
     </nav>`;
@@ -1477,6 +1538,7 @@
       const content = state.view === "find" ? findView()
                     : state.view === "post" ? postView()
                     : state.view === "trips" ? tripsView()
+                    : state.view === "archive" ? archiveView()
                     : state.view === "admin" ? adminView()
                     : state.view === "legal" ? legalView()
                     : profileView();
@@ -1575,16 +1637,18 @@
   // Admin data. The database decides what comes back: a non-admin gets
   // only their own reports, and no member list beyond what anyone sees.
   async function loadAdmin() {
-    const [{ data: reports }, { data: members }, { data: words }, { data: blocks }] = await Promise.all([
+    const [{ data: reports }, { data: members }, { data: words }, { data: blocks }, { data: usage }] = await Promise.all([
       db.from("reports").select("*").order("created_at", { ascending: false }),
       db.from("profiles").select(PROFILE_COLS).order("created_at"),
       db.from("blocked_words").select("*").order("word"),
       db.rpc("admin_list_blocks"),
+      db.rpc("admin_usage"),
     ]);
     state.admin.reports = reports || [];
     state.admin.members = members || [];
     state.admin.words = words || [];
     state.admin.blocks = blocks || [];
+    state.admin.usage = usage || null;
     state.admin.people = Object.fromEntries((members || []).map((p) => [p.id, p]));
   }
 
