@@ -1446,6 +1446,7 @@
      database, it changes here too. Deliberately short: a document nobody
      reads protects nobody. */
   const CONTACT_EMAIL = "jasmin@steihle.com";
+  const KOFI_URL = "https://ko-fi.com/theparea";
 
   function legalView() {
     const h2 = (t) => `<h2 class="font-display text-xl font-extrabold mt-8 mb-2">${t}</h2>`;
@@ -1540,7 +1541,16 @@
         ${p("Most cars on this island have one person in them. Meanwhile someone else is making the same trip, alone, an hour later.")}
         ${p("Lifta is for the drive, not the destination. You are going anyway. Someone else is going the same way. An hour of conversation costs neither of you anything, and both of you arrive having had a better trip than you would have had alone.")}
         ${p("That is why no money changes hands. The moment someone pays, it becomes a service, and a service is something you complain about rather than someone you talk to.")}
+
+        ${h2("Why the name")}
+        ${p("<em>Parea</em> is a Greek word with no real translation. It means the people you spend your time with: the group you sit with, the company you keep. You can do something <em>me parea</em>, with others, instead of alone.")}
+        ${p("Nobody pays for parea. The moment money changes hands it stops being parea and becomes something else. That is the whole idea behind this, in one word.")}
+
         ${p(`Lifta is built and run by Jasmin, one person in Cyprus, as a hobby project. There is no company behind it, no funding and no income. Nobody is trying to grow it into anything. If you want to say something about it, write to <a href="mailto:${CONTACT_EMAIL}" class="font-semibold text-teal-800 underline underline-offset-4">${CONTACT_EMAIL}</a>.`)}
+
+        ${h2("What it costs")}
+        ${p("About 13 euro a year. That is the domain. The database, the sign-in and the hosting are all on free plans, and the app is built so it stays that way: a ride is deleted when it departs, a thread after five days, so there is never much to store.")}
+        ${p(`If you want to cover a coffee towards it, there is a link: <a href="${KOFI_URL}" target="_blank" rel="noopener" class="font-semibold text-teal-800 underline underline-offset-4">ko-fi.com/theparea</a>. It buys you nothing here. No badge, no priority, no mention anywhere. The rule about money applies to me as well.`)}
       </section>
 
       <section class="rounded-2xl bg-ink text-white p-6 mt-6">
@@ -1647,7 +1657,11 @@
   /* ---------- Data ---------- */
   async function loadSession() {
     // A shared link is answered before we care who is signed in.
-    const token = new URLSearchParams(location.search).get("t");
+    const params = new URLSearchParams(location.search);
+    // theparea.app/?about lands a curious stranger on the explanation
+    // rather than on a sign-in screen they cannot get past.
+    if (params.has("about")) state.view = "legal";
+    const token = params.get("t");
     if (token) {
       const { data } = await db.rpc("view_shared_trip", { p_token: token });
       if (data) { state.shared = data; state.loading = false; return render(); }
