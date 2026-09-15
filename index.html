@@ -115,7 +115,7 @@
       + "|\\b(fuel|petrol|gas|diesel|benzin|bensin)\\s*(money|cost|costs|cash|contribution|share)\\b"
       + "|\\b(money|cash|something|anything)\\s+(for|towards|toward)\\s+(the\\s+)?(fuel|petrol|gas|diesel|ride|trip|drive|lift)\\b"
       + "|\\brevolut\\b|\\bpaypal\\b|\\bswish\\w*|\\bvenmo\\b|\\bzelle\\b|\\bwise\\b|\\bbank transfer\\b|\\biban\\b|\\bcrypto\\b|\\bbitcoin\\b"
-      + "|\\btips?\\b|\\btipping\\b|\\bcompensat\\w*|\\breimburs\\w*|\\brefund\\w*|\\bdonation\\w*|\\bdonate\\w*"
+      + "|\\btip\\s+(you|him|her|them|the driver)\\b|\\bcompensat\\w*|\\breimburs\\w*|\\brefund\\w*|\\bdonation\\w*|\\bdonate\\w*"
       + "|ευρώ|ευρω|λεφτά|λεφτα|χρήματα|χρηματα|πληρ|μετρητ)", "i");
     return { test: (t) => HIT.test(String(t || "").replace(CLEAR, " ")) };
   })();
@@ -1470,6 +1470,8 @@
           ${li("Mentions of money and payment are blocked in ride notes, requests and trip messages.")}
           ${li("Asking for payment gets an account removed. Report it if it happens to you.")}
         </ul>
+        ${p("Do not offer a tip at the end of a trip either. A tip is money with a friendlier name, and the driver has to be able to say no without feeling rude. Buying a coffee when you stop somewhere is different: that is two people being decent to each other, not payment for a ride. If you want to give something back, buy the coffee, or offer the drive next time if you have a car.")}
+        ${p("None of this is about money being grubby. It is that the moment a sum is involved, there is something to argue about: whether it was enough, whether someone was short-changed, what the next passenger is expected to hand over. Without it there is nothing to fall out over, and the trip stays what it is meant to be.")}
 
         ${h2("Who can be here")}
         <ul class="mt-3 space-y-2">
